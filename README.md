@@ -1,6 +1,6 @@
 # RxKotlin-JDBC
 
-Fluent, concise, and easy-to-use extension functions targeting JDBC in the Kotlin langauge with [RxJava 2.0](https://github.com/ReactiveX/RxJava).
+Fluent, concise, and easy-to-use extension functions targeting JDBC in the Kotlin language with [RxJava 2.0](https://github.com/ReactiveX/RxJava).
 
 This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidmoten/rxjava-jdbc) but seeks to be much more lightweight by leveraging Kotlin functions. This also works best with a threadpool `DataSource` library such as [HikariCP](https://github.com/brettwooldridge/HikariCP). 
 
