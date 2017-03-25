@@ -1,0 +1,22 @@
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.1.+'
+  }
+}
+
+apply plugin: "kotlin"
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+        compile 'org.jetbrains.kotlin:kotlin-stdlib:1.1.+'
+        compile 'io.reactivex.rxjava2:rxjava:2.0.7'
+        testCompile 'junit:junit:4.12'
+        testCompile 'org.xerial:sqlite-jdbc:3.16.1'
+        testCompile 'com.zaxxer:HikariCP:2.6.1'
+}
+
