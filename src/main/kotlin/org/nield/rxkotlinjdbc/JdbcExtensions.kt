@@ -1,6 +1,6 @@
 package org.nield.rxkotlinjdbc
-
 import io.reactivex.Flowable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Single
 import java.io.InputStream
@@ -64,23 +64,24 @@ fun DataSource.insert(insertSQL: String, vararg v: Any?) = {
     QueryState(ps.generatedKeys, ps)
 }
 
-fun <T: Any> (() -> QueryState).toObservable(mapper: (ResultSet) -> T) =
-        Observable.fromCallable { this() }
-                .concatMap {
-                    it.toObservable(mapper)
-                }
+fun <T: Any> (() -> QueryState).toObservable(mapper: (ResultSet) -> T) = Observable.defer {
+    this().toObservable(mapper)
+}
 
-fun <T: Any> (() -> QueryState).toFlowable(mapper: (ResultSet) -> T) =
-        Flowable.fromCallable { this() }
-                .concatMap {
-                    it.toFlowable(mapper)
-                }
+fun <T: Any> (() -> QueryState).toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
+    this().toFlowable(mapper)
+}
+
+fun <T: Any> (() -> QueryState).toSingle(mapper: (ResultSet) -> T) = Single.defer {
+    toObservable(mapper).singleOrError()
+}
+
+fun <T: Any> (() -> QueryState).toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
+    toObservable(mapper).singleElement()
+}
 
 fun <T: Any> (() -> QueryState).toSequence(mapper: (ResultSet) -> T) =
-        Observable.fromCallable { this() }
-                .concatMap {
-                    it.toObservable(mapper)
-                }.blockingIterable()
+        toObservable(mapper).blockingIterable()
                 .asSequence()
 
 class QueryState(
