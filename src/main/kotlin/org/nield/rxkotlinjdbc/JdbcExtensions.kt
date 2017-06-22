@@ -1,4 +1,5 @@
 package org.nield.rxkotlinjdbc
+
 import io.reactivex.Flowable
 import io.reactivex.Maybe
 import io.reactivex.Observable
@@ -26,7 +27,7 @@ fun Connection.execute(sql: String, vararg v: Any?) = Single.fromCallable {
 fun Connection.select(sql: String, vararg v: Any?) = {
     prepareStatement(sql).let { ps ->
         ps.processParameters(v)
-        QueryState(ps.executeQuery(), ps)
+        QueryState({ps.executeQuery()}, ps)
     }
 }
 
@@ -34,17 +35,15 @@ fun Connection.insert(insertSQL: String, vararg v: Any?) =  {
     val ps = prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
     ps.processParameters(v)
     ps.executeUpdate()
-    QueryState(ps.generatedKeys, ps)
+    QueryState({ps.generatedKeys}, ps)
 }
 
 fun DataSource.execute(sql: String, vararg v: Any?): Int {
     val c = connection
-    try {
+    c.use {
         val ps = connection.prepareStatement(sql)
         ps.processParameters(v)
         return ps.executeUpdate()
-    } finally {
-        c.close()
     }
 }
 
@@ -52,17 +51,20 @@ fun DataSource.select(sql: String, vararg v: Any?) = {
     connection.let { connection ->
         val ps = connection.prepareStatement(sql)
         ps.processParameters(v)
-        QueryState(ps.executeQuery(), ps, connection)
+        QueryState({ps.executeQuery()}, ps, connection)
     }
 }
+
 
 fun DataSource.insert(insertSQL: String, vararg v: Any?) = {
     val connection = this.connection
     val ps = connection.prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
     ps.processParameters(v)
     ps.executeUpdate()
-    QueryState(ps.generatedKeys, ps)
+    QueryState({ps.generatedKeys}, ps)
 }
+
+fun (() -> QueryState).toDataClass() = toSequence { it.toDataClass() }.first()
 
 fun <T: Any> (() -> QueryState).toObservable(mapper: (ResultSet) -> T) = Observable.defer {
     this().toObservable(mapper)
@@ -85,26 +87,32 @@ fun <T: Any> (() -> QueryState).toSequence(mapper: (ResultSet) -> T) =
                 .asSequence()
 
 class QueryState(
-        val resultSet: ResultSet,
+        val resultSetGetter: () -> ResultSet,
         val statement: PreparedStatement? = null,
         val connection: Connection? = null
 ) {
     fun <T: Any> toObservable(mapper: (ResultSet) -> T): Observable<T> {
-        val iterator = QueryIterator(this,mapper)
-        return Observable.fromIterable(iterator.asIterable())
-                .doOnTerminate { iterator.close() }
-                .doOnDispose { iterator.close() }
+
+        return Observable.defer {
+            val iterator = QueryIterator(this, resultSetGetter(), mapper)
+            Observable.fromIterable(iterator.asIterable())
+                    .doOnTerminate { iterator.close() }
+                    .doOnDispose { iterator.close() }
+        }
     }
 
     fun <T: Any> toFlowable(mapper: (ResultSet) -> T): Flowable<T> {
-        val iterator = QueryIterator(this,mapper)
-        return Flowable.fromIterable(iterator.asIterable())
-                .doOnTerminate { iterator.close() }
-                .doOnCancel { iterator.close() }
+        return Flowable.defer {
+            val iterator = QueryIterator(this, resultSetGetter(), mapper)
+            Flowable.fromIterable(iterator.asIterable())
+                    .doOnTerminate { iterator.close() }
+                    .doOnCancel { iterator.close() }
+        }
     }
 }
 
 class QueryIterator<out T>(val qs: QueryState,
+                           val rs: ResultSet,
                            val mapper: (ResultSet) -> T
 ) : Iterator<T> {
 
@@ -113,15 +121,15 @@ class QueryIterator<out T>(val qs: QueryState,
 
     override fun next(): T {
         if (!didNext) {
-            qs.resultSet.next()
+            rs.next()
         }
         didNext = false
-        return mapper(qs.resultSet)
+        return mapper(rs)
     }
 
     override fun hasNext(): Boolean {
         if (!didNext) {
-            hasNext = qs.resultSet.next()
+            hasNext = rs.next()
             didNext = true
         }
         return hasNext
@@ -132,12 +140,11 @@ class QueryIterator<out T>(val qs: QueryState,
     }
 
     fun close() {
-        qs.resultSet.close()
+        rs.close()
         qs.statement?.close()
         qs.connection?.close()
     }
 }
-
 
 fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { pos, v ->
     when (v) {
@@ -156,4 +163,3 @@ fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed {
         is InputStream -> setBinaryStream(pos+1, v)
         is Enum<*> -> setObject(pos+1, v)
     }
-}
