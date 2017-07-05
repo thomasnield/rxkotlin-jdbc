@@ -14,6 +14,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import javax.sql.DataSource
 
 fun Connection.execute(sql: String, vararg v: Any?) = Single.fromCallable {
@@ -106,7 +108,7 @@ class QueryState(
             val iterator = QueryIterator(this, resultSetGetter(), mapper)
             Flowable.fromIterable(iterator.asIterable())
                     .doOnTerminate { iterator.close() }
-                    .doOnCancel { iterator.close() }
+                    .doOnCancel { iterator.cancel() }
         }
     }
 }
@@ -118,6 +120,7 @@ class QueryIterator<out T>(val qs: QueryState,
 
     private var didNext = false
     private var hasNext = false
+    private val cancelled = AtomicBoolean(false)
 
     override fun next(): T {
         if (!didNext) {
@@ -128,6 +131,11 @@ class QueryIterator<out T>(val qs: QueryState,
     }
 
     override fun hasNext(): Boolean {
+        if (cancelled.get()) {
+            excecuteCancel()
+            hasNext = false
+            return false
+        }
         if (!didNext) {
             hasNext = rs.next()
             didNext = true
@@ -140,6 +148,14 @@ class QueryIterator<out T>(val qs: QueryState,
     }
 
     fun close() {
+        rs.close()
+        qs.statement?.close()
+        qs.connection?.close()
+    }
+    fun cancel() {
+        cancelled.set(true)
+    }
+    private fun excecuteCancel() {
         rs.close()
         qs.statement?.close()
         qs.connection?.close()
@@ -163,3 +179,4 @@ fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed {
         is InputStream -> setBinaryStream(pos+1, v)
         is Enum<*> -> setObject(pos+1, v)
     }
+}
