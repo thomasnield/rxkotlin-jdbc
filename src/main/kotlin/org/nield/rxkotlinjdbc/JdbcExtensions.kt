@@ -42,18 +42,19 @@ fun Connection.insert(insertSQL: String, vararg v: Any?) =  {
 
 fun DataSource.execute(sql: String, vararg v: Any?): Int {
     val c = connection
-    c.use {
-        val ps = connection.prepareStatement(sql)
-        ps.processParameters(v)
-        return ps.executeUpdate()
-    }
+    val ps = connection.prepareStatement(sql)
+    ps.processParameters(v)
+    val affectedCount = ps.executeUpdate()
+    ps.close()
+    c.close()
+    return affectedCount
 }
 
 fun DataSource.select(sql: String, vararg v: Any?) = {
     connection.let { connection ->
         val ps = connection.prepareStatement(sql)
         ps.processParameters(v)
-        QueryState({ps.executeQuery()}, ps, connection)
+        QueryState({ ps.executeQuery() }, ps, connection)
     }
 }
 
@@ -65,8 +66,6 @@ fun DataSource.insert(insertSQL: String, vararg v: Any?) = {
     ps.executeUpdate()
     QueryState({ps.generatedKeys}, ps)
 }
-
-fun (() -> QueryState).toDataClass() = toSequence { it.toDataClass() }.first()
 
 fun <T: Any> (() -> QueryState).toObservable(mapper: (ResultSet) -> T) = Observable.defer {
     this().toObservable(mapper)
@@ -85,8 +84,7 @@ fun <T: Any> (() -> QueryState).toMaybe(mapper: (ResultSet) -> T) = Maybe.defer 
 }
 
 fun <T: Any> (() -> QueryState).toSequence(mapper: (ResultSet) -> T) =
-        toObservable(mapper).blockingIterable()
-                .asSequence()
+        toObservable(mapper).blockingIterable().asSequence()
 
 class QueryState(
         val resultSetGetter: () -> ResultSet,
@@ -162,21 +160,21 @@ class QueryIterator<out T>(val qs: QueryState,
     }
 }
 
-fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { pos, v ->
-    when (v) {
+fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { pos, argVal ->
+    when (argVal) {
         null -> setObject(pos+1, null)
-        is UUID -> setObject(pos+1, v)
-        is Int -> setInt(pos+1, v)
-        is String -> setString(pos+1, v)
-        is Double -> setDouble(pos+1, v)
-        is Boolean -> setBoolean(pos+1, v)
-        is Float -> setFloat(pos+1, v)
-        is Long -> setLong(pos+1, v)
-        is LocalTime -> setTime(pos+1, java.sql.Time.valueOf(v))
-        is LocalDate -> setDate(pos+1, java.sql.Date.valueOf(v))
-        is LocalDateTime -> setTimestamp(pos+1, java.sql.Timestamp.valueOf(v))
-        is BigDecimal -> setBigDecimal(pos+1, v)
-        is InputStream -> setBinaryStream(pos+1, v)
-        is Enum<*> -> setObject(pos+1, v)
+        is UUID -> setObject(pos+1, argVal)
+        is Int -> setInt(pos+1, argVal)
+        is String -> setString(pos+1, argVal)
+        is Double -> setDouble(pos+1, argVal)
+        is Boolean -> setBoolean(pos+1, argVal)
+        is Float -> setFloat(pos+1, argVal)
+        is Long -> setLong(pos+1, argVal)
+        is LocalTime -> setTime(pos+1, java.sql.Time.valueOf(argVal))
+        is LocalDate -> setDate(pos+1, java.sql.Date.valueOf(argVal))
+        is LocalDateTime -> setTimestamp(pos+1, java.sql.Timestamp.valueOf(argVal))
+        is BigDecimal -> setBigDecimal(pos+1, argVal)
+        is InputStream -> setBinaryStream(pos+1, argVal)
+        is Enum<*> -> setObject(pos+1, argVal)
     }
 }
