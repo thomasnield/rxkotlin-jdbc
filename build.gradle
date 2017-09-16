@@ -10,6 +10,8 @@ buildscript {
 }
 
 apply plugin: "kotlin"
+apply plugin: "idea"
+
 repositories {
   mavenCentral()
 }
