@@ -16,3 +16,6 @@ hs_err_pid*
 *.iml
 *.ipr
 *.iws
+
+gradle.properties
+secring.gpg

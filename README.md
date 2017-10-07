@@ -53,9 +53,14 @@ with(ds) {
     execute("INSERT INTO USER (USERNAME,PASSWORD) VALUES (?,?)", "bobmarshal","batman43")
 }
 
-ds.select("SELECT * FROM USER")
+ds.select("SELECT * FROM USER)
         .toObservable { it.getInt("ID") to it.getString("USERNAME") }
         .subscribe(::println)
+
+
+ds.select("SELECT * FROM USER WHERE ID = ?", 2))
+        .toSingle { it.getInt("ID") to it.getString("USERNAME") }
+        .subscribeBy(::println)
 ```
 
 **OUTPUT:**
