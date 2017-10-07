@@ -7,7 +7,29 @@ This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidm
 
 ## Binaries
 
-Until this is finalized enough to release to Maven Central, you can use JitPack.io to build with Maven or Gradle:
+**Maven**
+
+```xml
+<dependency>
+  <groupId>org.nield</groupId>
+  <artifactId>rxkotlin-jdbc</artifactId>
+  <version>0.0.1</version>
+</dependency>
+```
+
+**Gradle**
+
+```groovy
+repositories {
+    mavenCentral()
+}
+dependencies {
+    compile 'org.nield:rxkotlin-jdbc:0.0.1'
+}
+```
+
+
+You can also use JitPack.io to build a snapshot with Maven or Gradle:
 
 **Gradle**
 
