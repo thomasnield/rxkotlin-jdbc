@@ -9,7 +9,7 @@ import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
-import java.sql.Statement
+import java.sql.Statement.RETURN_GENERATED_KEYS
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -18,95 +18,62 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 
-fun Connection.execute(sql: String) = Single.fromCallable {
-    prepareStatement(sql).let {
-        it.executeUpdate()
-        it.updateCount
-    }
-}
+fun Connection.execute(sqlTemplate: String) = UpdateOperation(
+        sqlTemplate = sqlTemplate,
+        connectionGetter = { this },
+        autoClose = false
+)
 
 fun Connection.select(sqlTemplate: String)  =
-        StagedOperation(
+        SelectOperation(
             sqlTemplate = sqlTemplate,
             connectionGetter = { this },
-            preparedStatementGetter =  { sql, conn ->
-                val ps = conn.prepareStatement(sql)
-                ps
-            },
-            resultSetGetter = { it.executeQuery() },
-            autoClose = false,
-            isUpdate = false
-    )
+            autoClose = false
+        )
 
 /**
  * Executes an INSERT operation and returns the generated keys as a single-field `ResultSet`
  */
 fun Connection.insert(insertSQL: String)  =
-        StagedOperation(
+        InsertOperation(
             sqlTemplate = insertSQL,
             connectionGetter = { this },
-            preparedStatementGetter =  { sql, conn ->
-                val ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
-                ps
-            },
-            resultSetGetter = { it.generatedKeys },
-            autoClose = false,
-            isUpdate = true
-    )
+            autoClose = false
+        )
 
-fun DataSource.execute(sql: String, vararg v: Any?): Int {
-    val c = connection
-    val ps = connection.prepareStatement(sql)
-    ps.processParameters(v)
-    val affectedCount = ps.executeUpdate()
-    ps.close()
-    c.close()
-    return affectedCount
-}
+fun DataSource.execute(sqlTemplate: String) = UpdateOperation(
+        sqlTemplate = sqlTemplate,
+        connectionGetter = { connection },
+        autoClose = true
+)
 
 fun DataSource.select(sqlTemplate: String)  =
-        StagedOperation(
+        SelectOperation(
             sqlTemplate = sqlTemplate,
             connectionGetter = { this.connection },
-            preparedStatementGetter =  { sql, conn ->
-                val ps = connection.prepareStatement(sql)
-                ps
-            },
-            resultSetGetter = { it.executeQuery() },
-            autoClose = true,
-            isUpdate = false
-    )
+            autoClose = true
+        )
 
 
 
 fun DataSource.insert(insertSQL: String) =
-        StagedOperation(
+        InsertOperation(
             sqlTemplate = insertSQL,
             connectionGetter = { this.connection },
-            preparedStatementGetter =  { sql, conn ->
-                val ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
-                ps.executeUpdate()
-                ps
-            },
-            resultSetGetter = { it.generatedKeys },
-            autoClose = true,
-            isUpdate = true
-    )
+            autoClose = true
+        )
 
 
-
-class StagedOperation(
-        sqlTemplate: String,
+class PreparedStatementBuilder(
         val connectionGetter: () -> Connection,
-        val preparedStatementGetter: (String, Connection) -> PreparedStatement,
-        val resultSetGetter: ((PreparedStatement) -> ResultSet),
-        val autoClose: Boolean,
-        val isUpdate: Boolean,
-        val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
+        val preparedStatementGetter: (String,Connection) -> PreparedStatement,
+        sqlTemplate: String
+
 ) {
-    val sql: String = sqlTemplate.replace(parameterRegex,"?")
 
     private val namelessParameterIndex = AtomicInteger(0)
+    val sql: String = sqlTemplate.replace(parameterRegex,"?")
+    val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 
     companion object {
         private val parameterRegex = Regex(":[_A-Za-z0-9]+")
@@ -117,47 +84,192 @@ class StagedOperation(
             .withIndex()
             .groupBy({it.value},{it.index})
 
-    fun parameters(vararg parameters: Pair<String,Any?>): StagedOperation {
+    fun parameters(vararg parameters: Pair<String,Any?>) {
         parameters.forEach { parameter(it) }
-        return this
     }
 
-    fun parameter(value: Any?): StagedOperation {
+    fun parameter(value: Any?) {
         furtherOps += { it.processParameter(namelessParameterIndex.getAndIncrement(), value) }
-        return this
     }
-    fun parameters(vararg parameters: Any?): StagedOperation {
+
+    fun parameters(vararg parameters: Any?) {
         furtherOps += { it.processParameters(parameters) }
-        return this
     }
-    fun parameter(parameter: Pair<String,Any?>): StagedOperation {
+    fun parameter(parameter: Pair<String,Any?>) {
         parameter(parameter.first, parameter.second)
-        return this
     }
-    fun parameter(parameter: String, value: Any?): StagedOperation {
+    fun parameter(parameter: String, value: Any?) {
         (mappedParameters[":" + parameter] ?: throw Exception("Parameter $parameter not found!}"))
                 .asSequence()
                 .forEach { i -> furtherOps += { it.processParameter(i, value) } }
+    }
+    fun toPreparedStatement(): ConnectionAndPreparedStatement {
+        val conn = connectionGetter()
+        val ps = preparedStatementGetter(sql, conn)
+        furtherOps.forEach { it(ps) }
+        return ConnectionAndPreparedStatement(conn,ps)
+    }
+}
 
+class ConnectionAndPreparedStatement(val conn: Connection, val ps: PreparedStatement)
+
+class SelectOperation(
+        sqlTemplate: String,
+        connectionGetter: () -> Connection,
+        val autoClose: Boolean
+) {
+
+    val builder = PreparedStatementBuilder(connectionGetter,{sql,conn -> conn.prepareStatement(sql) },sqlTemplate)
+
+    fun parameters(vararg parameters: Pair<String,Any?>): SelectOperation {
+        builder.parameters(parameters)
+        return this
+    }
+
+    fun parameter(value: Any?): SelectOperation {
+        builder.parameter(value)
+        return this
+    }
+
+    fun parameters(vararg parameters: Any?): SelectOperation {
+        builder.parameters(parameters)
+        return this
+    }
+    fun parameter(parameter: Pair<String,Any?>): SelectOperation {
+        builder.parameter(parameter)
+        return this
+    }
+    fun parameter(parameter: String, value: Any?): SelectOperation {
+        builder.parameter(parameter,value)
         return this
     }
 
     fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
-        val conn = connectionGetter()
-        val ps = preparedStatementGetter(sql, conn)
-        furtherOps.forEach { it(ps) }
-        if (isUpdate) ps.executeUpdate()
-
-        ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toObservable(mapper)
+        val cps = builder.toPreparedStatement()
+        ResultSetState({cps.ps.executeQuery()}, cps.ps, cps.conn, autoClose).toObservable(mapper)
     }
 
     fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
-        val conn = connectionGetter()
-        val ps = preparedStatementGetter(sql, conn)
-        furtherOps.forEach { it(ps) }
-        if (isUpdate) ps.executeUpdate()
+        val cps = builder.toPreparedStatement()
+        ResultSetState({cps.ps.executeQuery()}, cps.ps, cps.conn, autoClose).toFlowable(mapper)
+    }
 
-        ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toFlowable(mapper)
+    fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
+        toObservable(mapper).singleOrError()
+    }
+
+    fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
+        toObservable(mapper).singleElement()
+    }
+
+    fun toCompletable() = toFlowable { Unit }.ignoreElements()
+
+    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
+            toObservable(mapper).blockingIterable().asSequence()
+
+}
+
+class InsertOperation(
+        sqlTemplate: String,
+        connectionGetter: () -> Connection,
+        val autoClose: Boolean
+) {
+
+    val builder = PreparedStatementBuilder(connectionGetter,{sql, conn -> conn.prepareStatement(sql, RETURN_GENERATED_KEYS)},sqlTemplate)
+
+    fun parameters(vararg parameters: Pair<String,Any?>): InsertOperation {
+        builder.parameters(parameters)
+        return this
+    }
+
+    fun parameter(value: Any?): InsertOperation {
+        builder.parameter(value)
+        return this
+    }
+
+    fun parameters(vararg parameters: Any?): InsertOperation {
+        builder.parameters(parameters)
+        return this
+    }
+    fun parameter(parameter: Pair<String,Any?>): InsertOperation {
+        builder.parameter(parameter)
+        return this
+    }
+    fun parameter(parameter: String, value: Any?): InsertOperation {
+        builder.parameter(parameter,value)
+        return this
+    }
+
+    fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
+        val cps = builder.toPreparedStatement()
+        ResultSetState({
+            cps.ps.executeUpdate()
+            cps.ps.generatedKeys
+        }, cps.ps, cps.conn, autoClose).toObservable(mapper)
+    }
+
+    fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
+        val cps = builder.toPreparedStatement()
+        ResultSetState({
+            cps.ps.executeUpdate()
+            cps.ps.generatedKeys
+        }, cps.ps, cps.conn, autoClose).toFlowable(mapper)
+    }
+
+    fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
+        toObservable(mapper).singleOrError()
+    }
+
+    fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
+        toObservable(mapper).singleElement()
+    }
+
+    fun toCompletable() = toFlowable { Unit }.ignoreElements()
+
+    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
+            toObservable(mapper).blockingIterable().asSequence()
+
+}
+
+class UpdateOperation(
+        sqlTemplate: String,
+        connectionGetter: () -> Connection,
+        val autoClose: Boolean
+) {
+
+    val builder = PreparedStatementBuilder(connectionGetter,{sql, conn -> conn.prepareStatement(sql)},sqlTemplate)
+
+    fun parameters(vararg parameters: Pair<String,Any?>): UpdateOperation {
+        builder.parameters(parameters)
+        return this
+    }
+
+    fun parameter(value: Any?): UpdateOperation {
+        builder.parameter(value)
+        return this
+    }
+
+    fun parameters(vararg parameters: Any?): UpdateOperation {
+        builder.parameters(parameters)
+        return this
+    }
+    fun parameter(parameter: Pair<String,Any?>): UpdateOperation {
+        builder.parameter(parameter)
+        return this
+    }
+    fun parameter(parameter: String, value: Any?): UpdateOperation {
+        builder.parameter(parameter,value)
+        return this
+    }
+
+    fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
+        val cps = builder.toPreparedStatement()
+        Observable.just(cps.ps.executeUpdate())
+    }
+
+    fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
+        val cps = builder.toPreparedStatement()
+        Flowable.just(cps.ps.executeUpdate())
     }
 
     fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {

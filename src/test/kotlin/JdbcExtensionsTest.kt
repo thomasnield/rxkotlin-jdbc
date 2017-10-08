@@ -13,6 +13,7 @@ class DatabaseTest {
     val dbPath = "jdbc:sqlite::memory:"
 
     val connectionFactory = {
+
         DriverManager.getConnection(dbPath).apply {
             createStatement().apply {
                 execute("CREATE TABLE USER (ID INTEGER PRIMARY KEY, USERNAME VARCHAR(30) NOT NULL, PASSWORD VARCHAR(30) NOT NULL)")
@@ -28,9 +29,13 @@ class DatabaseTest {
 
         val conn = connectionFactory()
 
+        val testSubscriber = TestSubscriber<Pair<Int,String>>()
+
         conn.select("SELECT * FROM USER")
                 .toFlowable { it.getInt("ID") to it.getString("USERNAME") }
-                .subscribe(::println)
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValueCount(2)
 
         conn.close()
     }
@@ -128,11 +133,17 @@ class DatabaseTest {
     fun singleInsertTest() {
         val conn = connectionFactory()
 
+        val testSubscriber = TestSubscriber<Int>()
+
         conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
                 .parameter("username","josephmarlon")
                 .parameter("password","coffeesnob43")
                 .toFlowable { it.getInt(1) }
-                .forEach { println(it) }
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValues(3)
+
+        conn.close()
     }
 
     @Test
@@ -152,6 +163,8 @@ class DatabaseTest {
         }.subscribe(testObserver)
 
         testObserver.assertValues(3,4,5)
+
+        conn.close()
     }
 
     @Test
@@ -159,26 +172,30 @@ class DatabaseTest {
 
         val conn = connectionFactory()
 
+        val testObserver = TestObserver<Int>()
+
         conn.execute("DELETE FROM USER WHERE ID = :id")
                 .parameter("id",2)
                 .toObservable { it.getInt(1) }
-                .subscribe {
-                    println(it)
-                }
+                .subscribe(testObserver)
 
+        testObserver.assertValues(1)
+        conn.close()
     }
     @Test
     fun updateTest() {
 
         val conn = connectionFactory()
+        val testObserver = TestObserver<Int>()
 
         conn.execute("UPDATE USER SET PASSWORD = :password WHERE ID = :id")
                 .parameter("id",1)
                 .parameter("password","squirrel56")
                 .toObservable { it.getInt(1) }
-                .subscribe {
-                    println(it)
-                }
+                .subscribe(testObserver)
 
+        testObserver.assertValues(1)
+
+        conn.close()
     }
 }
