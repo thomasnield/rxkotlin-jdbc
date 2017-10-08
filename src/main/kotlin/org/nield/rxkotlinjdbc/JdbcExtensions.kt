@@ -15,42 +15,43 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 
-fun Connection.execute(sql: String, vararg v: Any?) = Single.fromCallable {
+fun Connection.execute(sql: String) = Single.fromCallable {
     prepareStatement(sql).let {
-        it.processParameters(v)
         it.executeUpdate()
         it.updateCount
     }
 }
 
-fun Connection.select(sql: String, vararg v: Any?)  =
+fun Connection.select(sqlTemplate: String)  =
         StagedOperation(
-            sqlTemplate = sql,
+            sqlTemplate = sqlTemplate,
             connectionGetter = { this },
-            preparedStatementGetter =  {
-                val ps = prepareStatement(sql)
-                ps.processParameters(v)
+            preparedStatementGetter =  { sql, conn ->
+                val ps = conn.prepareStatement(sql)
                 ps
             },
             resultSetGetter = { it.executeQuery() },
-            autoClose = false
+            autoClose = false,
+            isUpdate = false
     )
 
-
-fun Connection.insert(insertSQL: String, vararg v: Any?)  =
+/**
+ * Executes an INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun Connection.insert(insertSQL: String)  =
         StagedOperation(
             sqlTemplate = insertSQL,
             connectionGetter = { this },
-            preparedStatementGetter =  {
-                val ps = prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
-                ps.processParameters(v)
-                ps.executeUpdate()
+            preparedStatementGetter =  { sql, conn ->
+                val ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
                 ps
             },
             resultSetGetter = { it.generatedKeys },
-            autoClose = false
+            autoClose = false,
+            isUpdate = true
     )
 
 fun DataSource.execute(sql: String, vararg v: Any?): Int {
@@ -63,33 +64,33 @@ fun DataSource.execute(sql: String, vararg v: Any?): Int {
     return affectedCount
 }
 
-fun DataSource.select(sql: String, vararg v: Any?)  =
+fun DataSource.select(sqlTemplate: String)  =
         StagedOperation(
-            sqlTemplate = sql,
+            sqlTemplate = sqlTemplate,
             connectionGetter = { this.connection },
-            preparedStatementGetter =  {
+            preparedStatementGetter =  { sql, conn ->
                 val ps = connection.prepareStatement(sql)
-                ps.processParameters(v)
                 ps
             },
             resultSetGetter = { it.executeQuery() },
-            autoClose = true
+            autoClose = true,
+            isUpdate = false
     )
 
 
 
-fun DataSource.insert(insertSQL: String, vararg v: Any?) =
+fun DataSource.insert(insertSQL: String) =
         StagedOperation(
             sqlTemplate = insertSQL,
             connectionGetter = { this.connection },
-            preparedStatementGetter =  {
-                val ps = connection.prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
-                ps.processParameters(v)
+            preparedStatementGetter =  { sql, conn ->
+                val ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
                 ps.executeUpdate()
                 ps
             },
             resultSetGetter = { it.generatedKeys },
-            autoClose = true
+            autoClose = true,
+            isUpdate = true
     )
 
 
@@ -97,28 +98,43 @@ fun DataSource.insert(insertSQL: String, vararg v: Any?) =
 class StagedOperation(
         sqlTemplate: String,
         val connectionGetter: () -> Connection,
-        val preparedStatementGetter: (Connection) -> PreparedStatement,
+        val preparedStatementGetter: (String, Connection) -> PreparedStatement,
         val resultSetGetter: ((PreparedStatement) -> ResultSet),
         val autoClose: Boolean,
+        val isUpdate: Boolean,
         val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 ) {
-    val sqlTemplate: String = sqlTemplate.replace(parameterRegex,"?")
+    val sql: String = sqlTemplate.replace(parameterRegex,"?")
+
+    private val namelessParameterIndex = AtomicInteger(0)
 
     companion object {
         private val parameterRegex = Regex(":[_A-Za-z0-9]+")
     }
 
-    val mappedParameters = parameterRegex.findAll(sqlTemplate).asSequence()
+    private val mappedParameters = parameterRegex.findAll(sqlTemplate).asSequence()
             .map { it.value }
             .withIndex()
             .groupBy({it.value},{it.index})
 
-    fun params(vararg parameters: Any?): StagedOperation {
-        furtherOps += { it.processParameters(parameters) }
+    fun parameters(vararg parameters: Pair<String,Any?>): StagedOperation {
+        parameters.forEach { parameter(it) }
         return this
     }
 
-    fun param(parameter: String, value: Any?): StagedOperation {
+    fun parameter(value: Any?): StagedOperation {
+        furtherOps += { it.processParameter(namelessParameterIndex.getAndIncrement(), value) }
+        return this
+    }
+    fun parameters(vararg parameters: Any?): StagedOperation {
+        furtherOps += { it.processParameters(parameters) }
+        return this
+    }
+    fun parameter(parameter: Pair<String,Any?>): StagedOperation {
+        parameter(parameter.first, parameter.second)
+        return this
+    }
+    fun parameter(parameter: String, value: Any?): StagedOperation {
         (mappedParameters[":" + parameter] ?: throw Exception("Parameter $parameter not found!}"))
                 .asSequence()
                 .forEach { i -> furtherOps += { it.processParameter(i, value) } }
@@ -128,16 +144,18 @@ class StagedOperation(
 
     fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
         val conn = connectionGetter()
-        val ps = preparedStatementGetter(conn)
+        val ps = preparedStatementGetter(sql, conn)
         furtherOps.forEach { it(ps) }
+        if (isUpdate) ps.executeUpdate()
 
         ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toObservable(mapper)
     }
 
     fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
         val conn = connectionGetter()
-        val ps = preparedStatementGetter(conn)
+        val ps = preparedStatementGetter(sql, conn)
         furtherOps.forEach { it(ps) }
+        if (isUpdate) ps.executeUpdate()
 
         ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toFlowable(mapper)
     }
@@ -149,6 +167,8 @@ class StagedOperation(
     fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
         toObservable(mapper).singleElement()
     }
+
+    fun toCompletable() = toFlowable { Unit }.ignoreElements()
 
     fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
             toObservable(mapper).blockingIterable().asSequence()

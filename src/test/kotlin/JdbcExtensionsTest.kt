@@ -1,5 +1,10 @@
 
+import io.reactivex.Observable
+import io.reactivex.observers.TestObserver
+import io.reactivex.subscribers.TestSubscriber
 import org.junit.Test
+import org.nield.rxkotlinjdbc.execute
+import org.nield.rxkotlinjdbc.insert
 import org.nield.rxkotlinjdbc.select
 import java.sql.DriverManager
 
@@ -31,15 +36,149 @@ class DatabaseTest {
     }
 
     @Test
-    fun parameterTest() {
+    fun multiInjectParameterTest() {
 
         val conn = connectionFactory()
 
+        val testSubscriber = TestSubscriber<Pair<Int,String>>()
+
         conn.select("SELECT * FROM USER WHERE USERNAME LIKE :pattern and PASSWORD LIKE :pattern")
-                .param("pattern","%b%")
+                .parameter("pattern","%b%")
                 .toFlowable { it.getInt("ID") to it.getString("USERNAME") }
-                .subscribe(::println)
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValue(Pair(2,"bobmarshal"))
 
         conn.close()
+    }
+
+    @Test
+    fun parameterTest() {
+        val conn = connectionFactory()
+
+        val testSubscriber = TestSubscriber<Pair<Int,String>>()
+
+        conn.select("SELECT * FROM USER WHERE ID = ?")
+                .parameter(2)
+                .toSingle { it.getInt("ID") to it.getString("USERNAME") }
+                .toFlowable()
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValue(Pair(2,"bobmarshal"))
+
+        conn.close()
+    }
+
+    @Test
+    fun namedParameterTest() {
+
+        val conn = connectionFactory()
+
+        val testSubscriber = TestSubscriber<Pair<Int,String>>()
+
+        conn.select("SELECT * FROM USER WHERE ID = :id")
+                .parameter("id",2)
+                .toSingle { it.getInt("ID") to it.getString("USERNAME") }
+                .toFlowable()
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValue(Pair(2,"bobmarshal"))
+
+        conn.close()
+    }
+
+
+    @Test
+    fun namedMultipleParameterTest() {
+
+        val conn = connectionFactory()
+
+        val testSubscriber = TestSubscriber<Pair<Int,String>>()
+
+        conn.select("SELECT * FROM USER WHERE USERNAME LIKE :pattern and PASSWORD LIKE :pattern")
+                .parameter("pattern","%b%")
+                .toFlowable { it.getInt("ID") to it.getString("USERNAME") }
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValue(Pair(2,"bobmarshal"))
+
+        conn.close()
+    }
+
+    @Test
+    fun flatMapSelectTest() {
+        val conn = connectionFactory()
+
+        val testObserver = TestObserver<Pair<Int,String>>()
+
+        Observable.just(1,2)
+                .flatMapSingle {
+                    conn.select("SELECT * FROM USER WHERE ID = :id")
+                            .parameter("id",it)
+                            .toSingle { it.getInt("ID") to it.getString("USERNAME") }
+                }
+                .subscribe(testObserver)
+
+        testObserver.assertValueCount(2)
+
+        conn.close()
+    }
+
+    @Test
+    fun singleInsertTest() {
+        val conn = connectionFactory()
+
+        conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
+                .parameter("username","josephmarlon")
+                .parameter("password","coffeesnob43")
+                .toFlowable { it.getInt(1) }
+                .forEach { println(it) }
+    }
+
+    @Test
+    fun multiInsertTest() {
+        val conn = connectionFactory()
+        val testObserver = TestObserver<Int>()
+
+        Observable.just(
+                Pair("josephmarlon", "coffeesnob43"),
+                Pair("samuelfoley","shiner67"),
+                Pair("emilyearly","rabbit99")
+        ).flatMapSingle {
+            conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
+                    .parameter("username",it.first)
+                    .parameter("password",it.second)
+                    .toSingle { it.getInt(1) }
+        }.subscribe(testObserver)
+
+        testObserver.assertValues(3,4,5)
+    }
+
+    @Test
+    fun deleteTest() {
+
+        val conn = connectionFactory()
+
+        conn.execute("DELETE FROM USER WHERE ID = :id")
+                .parameter("id",2)
+                .toObservable { it.getInt(1) }
+                .subscribe {
+                    println(it)
+                }
+
+    }
+    @Test
+    fun updateTest() {
+
+        val conn = connectionFactory()
+
+        conn.execute("UPDATE USER SET PASSWORD = :password WHERE ID = :id")
+                .parameter("id",1)
+                .parameter("password","squirrel56")
+                .toObservable { it.getInt(1) }
+                .subscribe {
+                    println(it)
+                }
+
     }
 }
