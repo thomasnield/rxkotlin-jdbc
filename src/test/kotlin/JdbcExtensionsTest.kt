@@ -181,7 +181,7 @@ class DatabaseTest {
 
         conn.execute("DELETE FROM USER WHERE ID = :id")
                 .parameter("id",2)
-                .toObservable { it.getInt(1) }
+                .toSingle()
                 .subscribe(testObserver)
 
         testObserver.assertValues(1)
@@ -196,7 +196,7 @@ class DatabaseTest {
         conn.execute("UPDATE USER SET PASSWORD = :password WHERE ID = :id")
                 .parameter("id",1)
                 .parameter("password","squirrel56")
-                .toObservable { it.getInt(1) }
+                .toSingle()
                 .subscribe(testObserver)
 
         testObserver.assertValues(1)

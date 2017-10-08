@@ -262,29 +262,9 @@ class UpdateOperation(
         return this
     }
 
-    fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
-        val cps = builder.toPreparedStatement()
-        Observable.just(cps.ps.executeUpdate())
+    fun toSingle() = Single.defer {
+        Single.just(builder.toPreparedStatement().ps.executeUpdate())
     }
-
-    fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
-        val cps = builder.toPreparedStatement()
-        Flowable.just(cps.ps.executeUpdate())
-    }
-
-    fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
-        toObservable(mapper).singleOrError()
-    }
-
-    fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
-        toObservable(mapper).singleElement()
-    }
-
-    fun toCompletable() = toFlowable { Unit }.ignoreElements()
-
-    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
-            toObservable(mapper).blockingIterable().asSequence()
-
 }
 
 class ResultSetState(

@@ -110,8 +110,8 @@ ds.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
 
 conn.execute("DELETE FROM USER WHERE ID = :id")
         .parameter("id",2)
-        .toSingle { it.getInt(1) }
-        .subscribeBy(::println))
+        .toSingle()
+        .subscribeBy(::println)
 ```
 
 ## Connection Usage Example
