@@ -15,7 +15,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import javax.sql.DataSource
 
 fun Connection.execute(sql: String, vararg v: Any?) = Single.fromCallable {
@@ -26,19 +25,33 @@ fun Connection.execute(sql: String, vararg v: Any?) = Single.fromCallable {
     }
 }
 
-fun Connection.select(sql: String, vararg v: Any?) = {
-    prepareStatement(sql).let { ps ->
-        ps.processParameters(v)
-        QueryState({ps.executeQuery()}, ps)
-    }
-}
+fun Connection.select(sql: String, vararg v: Any?)  =
+        StagedOperation(
+            sqlTemplate = sql,
+            connectionGetter = { this },
+            preparedStatementGetter =  {
+                val ps = prepareStatement(sql)
+                ps.processParameters(v)
+                ps
+            },
+            resultSetGetter = { it.executeQuery() },
+            autoClose = false
+    )
 
-fun Connection.insert(insertSQL: String, vararg v: Any?) =  {
-    val ps = prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
-    ps.processParameters(v)
-    ps.executeUpdate()
-    QueryState({ps.generatedKeys}, ps)
-}
+
+fun Connection.insert(insertSQL: String, vararg v: Any?)  =
+        StagedOperation(
+            sqlTemplate = insertSQL,
+            connectionGetter = { this },
+            preparedStatementGetter =  {
+                val ps = prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
+                ps.processParameters(v)
+                ps.executeUpdate()
+                ps
+            },
+            resultSetGetter = { it.generatedKeys },
+            autoClose = false
+    )
 
 fun DataSource.execute(sql: String, vararg v: Any?): Int {
     val c = connection
@@ -50,51 +63,83 @@ fun DataSource.execute(sql: String, vararg v: Any?): Int {
     return affectedCount
 }
 
-fun DataSource.select(sql: String, vararg v: Any?) = {
-    connection.let { connection ->
-        val ps = connection.prepareStatement(sql)
-        ps.processParameters(v)
-        QueryState({ ps.executeQuery() }, ps, connection)
+fun DataSource.select(sql: String, vararg v: Any?)  =
+        StagedOperation(
+            sqlTemplate = sql,
+            connectionGetter = { this.connection },
+            preparedStatementGetter =  {
+                val ps = connection.prepareStatement(sql)
+                ps.processParameters(v)
+                ps
+            },
+            resultSetGetter = { it.executeQuery() },
+            autoClose = true
+    )
+
+
+
+fun DataSource.insert(insertSQL: String, vararg v: Any?) =
+        StagedOperation(
+            sqlTemplate = insertSQL,
+            connectionGetter = { this.connection },
+            preparedStatementGetter =  {
+                val ps = connection.prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
+                ps.processParameters(v)
+                ps.executeUpdate()
+                ps
+            },
+            resultSetGetter = { it.generatedKeys },
+            autoClose = true
+    )
+
+
+
+class StagedOperation(
+        val sqlTemplate: String,
+        val connectionGetter: () -> Connection,
+        val preparedStatementGetter: (Connection) -> PreparedStatement,
+        val resultSetGetter: ((PreparedStatement) -> ResultSet),
+        val autoClose: Boolean,
+        val parameters: MutableMap<Int,String> = mutableMapOf()
+) {
+
+    fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
+        val conn = connectionGetter()
+        val ps = preparedStatementGetter(conn)
+
+        ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toObservable(mapper)
     }
+
+    fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
+        val conn = connectionGetter()
+        val ps = preparedStatementGetter(conn)
+
+        ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toFlowable(mapper)
+    }
+
+    fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
+        toObservable(mapper).singleOrError()
+    }
+
+    fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
+        toObservable(mapper).singleElement()
+    }
+
+    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
+            toObservable(mapper).blockingIterable().asSequence()
+
 }
 
-
-fun DataSource.insert(insertSQL: String, vararg v: Any?) = {
-    val connection = this.connection
-    val ps = connection.prepareStatement(insertSQL, Statement.RETURN_GENERATED_KEYS)
-    ps.processParameters(v)
-    ps.executeUpdate()
-    QueryState({ps.generatedKeys}, ps)
-}
-
-fun <T: Any> (() -> QueryState).toObservable(mapper: (ResultSet) -> T) = Observable.defer {
-    this().toObservable(mapper)
-}
-
-fun <T: Any> (() -> QueryState).toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
-    this().toFlowable(mapper)
-}
-
-fun <T: Any> (() -> QueryState).toSingle(mapper: (ResultSet) -> T) = Single.defer {
-    toObservable(mapper).singleOrError()
-}
-
-fun <T: Any> (() -> QueryState).toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
-    toObservable(mapper).singleElement()
-}
-
-fun <T: Any> (() -> QueryState).toSequence(mapper: (ResultSet) -> T) =
-        toObservable(mapper).blockingIterable().asSequence()
-
-class QueryState(
+class ResultSetState(
         val resultSetGetter: () -> ResultSet,
         val statement: PreparedStatement? = null,
-        val connection: Connection? = null
+        val connection: Connection? = null,
+        val autoClose: Boolean
 ) {
     fun <T: Any> toObservable(mapper: (ResultSet) -> T): Observable<T> {
 
         return Observable.defer {
-            val iterator = QueryIterator(this, resultSetGetter(), mapper)
+            val iterator = QueryIterator(this, resultSetGetter(), mapper, autoClose)
             Observable.fromIterable(iterator.asIterable())
                     .doOnTerminate { iterator.close() }
                     .doOnDispose { iterator.close() }
@@ -103,7 +148,7 @@ class QueryState(
 
     fun <T: Any> toFlowable(mapper: (ResultSet) -> T): Flowable<T> {
         return Flowable.defer {
-            val iterator = QueryIterator(this, resultSetGetter(), mapper)
+            val iterator = QueryIterator(this, resultSetGetter(), mapper, autoClose)
             Flowable.fromIterable(iterator.asIterable())
                     .doOnTerminate { iterator.close() }
                     .doOnCancel { iterator.cancel() }
@@ -111,9 +156,10 @@ class QueryState(
     }
 }
 
-class QueryIterator<out T>(val qs: QueryState,
+class QueryIterator<out T>(val qs: ResultSetState,
                            val rs: ResultSet,
-                           val mapper: (ResultSet) -> T
+                           val mapper: (ResultSet) -> T,
+                           val autoClose: Boolean
 ) : Iterator<T> {
 
     private var didNext = false
@@ -148,7 +194,8 @@ class QueryIterator<out T>(val qs: QueryState,
     fun close() {
         rs.close()
         qs.statement?.close()
-        qs.connection?.close()
+        if (autoClose)
+            qs.connection?.close()
     }
     fun cancel() {
         cancelled.set(true)
@@ -156,7 +203,8 @@ class QueryIterator<out T>(val qs: QueryState,
     private fun excecuteCancel() {
         rs.close()
         qs.statement?.close()
-        qs.connection?.close()
+        if (autoClose)
+            qs.connection?.close()
     }
 }
 

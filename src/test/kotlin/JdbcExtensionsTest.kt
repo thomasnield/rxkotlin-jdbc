@@ -1,7 +1,6 @@
 
 import org.junit.Test
 import org.nield.rxkotlinjdbc.select
-import org.nield.rxkotlinjdbc.toFlowable
 import java.sql.DriverManager
 
 class DatabaseTest {
