@@ -95,17 +95,41 @@ fun DataSource.insert(insertSQL: String, vararg v: Any?) =
 
 
 class StagedOperation(
-        val sqlTemplate: String,
+        sqlTemplate: String,
         val connectionGetter: () -> Connection,
         val preparedStatementGetter: (Connection) -> PreparedStatement,
         val resultSetGetter: ((PreparedStatement) -> ResultSet),
         val autoClose: Boolean,
-        val parameters: MutableMap<Int,String> = mutableMapOf()
+        val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 ) {
+    val sqlTemplate: String = sqlTemplate.replace(parameterRegex,"?")
+
+    companion object {
+        private val parameterRegex = Regex(":[_A-Za-z0-9]+")
+    }
+
+    val mappedParameters = parameterRegex.findAll(sqlTemplate).asSequence()
+            .map { it.value }
+            .withIndex()
+            .groupBy({it.value},{it.index})
+
+    fun params(vararg parameters: Any?): StagedOperation {
+        furtherOps += { it.processParameters(parameters) }
+        return this
+    }
+
+    fun param(parameter: String, value: Any?): StagedOperation {
+        (mappedParameters[":" + parameter] ?: throw Exception("Parameter $parameter not found!}"))
+                .asSequence()
+                .forEach { i -> furtherOps += { it.processParameter(i, value) } }
+
+        return this
+    }
 
     fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
         val conn = connectionGetter()
         val ps = preparedStatementGetter(conn)
+        furtherOps.forEach { it(ps) }
 
         ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toObservable(mapper)
     }
@@ -113,6 +137,7 @@ class StagedOperation(
     fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
         val conn = connectionGetter()
         val ps = preparedStatementGetter(conn)
+        furtherOps.forEach { it(ps) }
 
         ResultSetState({resultSetGetter(ps)}, ps, conn, autoClose).toFlowable(mapper)
     }
@@ -208,21 +233,23 @@ class QueryIterator<out T>(val qs: ResultSetState,
     }
 }
 
-fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { pos, argVal ->
+fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { i,v2 -> processParameter(i,v2)}
+
+fun PreparedStatement.processParameter(pos: Int, argVal: Any?) {
     when (argVal) {
-        null -> setObject(pos+1, null)
-        is UUID -> setObject(pos+1, argVal)
-        is Int -> setInt(pos+1, argVal)
-        is String -> setString(pos+1, argVal)
-        is Double -> setDouble(pos+1, argVal)
-        is Boolean -> setBoolean(pos+1, argVal)
-        is Float -> setFloat(pos+1, argVal)
-        is Long -> setLong(pos+1, argVal)
-        is LocalTime -> setTime(pos+1, java.sql.Time.valueOf(argVal))
-        is LocalDate -> setDate(pos+1, java.sql.Date.valueOf(argVal))
-        is LocalDateTime -> setTimestamp(pos+1, java.sql.Timestamp.valueOf(argVal))
-        is BigDecimal -> setBigDecimal(pos+1, argVal)
-        is InputStream -> setBinaryStream(pos+1, argVal)
-        is Enum<*> -> setObject(pos+1, argVal)
+        null -> setObject(pos + 1, null)
+        is UUID -> setObject(pos + 1, argVal)
+        is Int -> setInt(pos + 1, argVal)
+        is String -> setString(pos + 1, argVal)
+        is Double -> setDouble(pos + 1, argVal)
+        is Boolean -> setBoolean(pos + 1, argVal)
+        is Float -> setFloat(pos + 1, argVal)
+        is Long -> setLong(pos + 1, argVal)
+        is LocalTime -> setTime(pos + 1, java.sql.Time.valueOf(argVal))
+        is LocalDate -> setDate(pos + 1, java.sql.Date.valueOf(argVal))
+        is LocalDateTime -> setTimestamp(pos + 1, java.sql.Timestamp.valueOf(argVal))
+        is BigDecimal -> setBigDecimal(pos + 1, argVal)
+        is InputStream -> setBinaryStream(pos + 1, argVal)
+        is Enum<*> -> setObject(pos + 1, argVal)
     }
 }
