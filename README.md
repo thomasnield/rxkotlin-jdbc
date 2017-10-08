@@ -126,3 +126,9 @@ ds.select("SELECT * FROM USER)
         .subscribe(::println)
 
 ```
+
+
+## Future Developments
+
+* [ ] Batch write support
+* [ ] Observable/Flowable parameter inputs
