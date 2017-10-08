@@ -139,7 +139,12 @@ class DatabaseTest {
                 .parameter("username","josephmarlon")
                 .parameter("password","coffeesnob43")
                 .toFlowable { it.getInt(1) }
-                .subscribe(testSubscriber)
+                .flatMapSingle {
+                    conn.select("SELECT * FROM USER WHERE ID = :id")
+                            .parameter("id", it)
+                            .toSingle { "${it.getInt("ID")} ${it.getString("USERNAME")} ${it.getString("PASSWORD")}" }
+                }
+                .subscribe(::println)
 
         testSubscriber.assertValues(3)
 
