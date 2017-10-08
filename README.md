@@ -121,7 +121,7 @@ You can also use a standard `Connection` with these extension functions, and clo
 ```kotlin
 val connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 
-ds.select("SELECT * FROM USER)
+connection.select("SELECT * FROM USER)
         .toObservable { it.getInt("ID") to it.getString("USERNAME") }
         .subscribe(::println)
 
