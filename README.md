@@ -2,7 +2,7 @@
 
 Fluent, concise, and easy-to-use extension functions targeting JDBC in the Kotlin language with [RxJava 2.0](https://github.com/ReactiveX/RxJava).
 
-This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidmoten/rxjava-jdbc) but seeks to be much more lightweight by leveraging Kotlin functions. This also works best with a threadpool `DataSource` library such as [HikariCP](https://github.com/brettwooldridge/HikariCP). 
+This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidmoten/rxjava-jdbc) but seeks to be much more lightweight by leveraging Kotlin functions. This works with threadpool `DataSource` implementations such as [HikariCP](https://github.com/brettwooldridge/HikariCP), but can also be used with vanilla JDBC `Connection`s.
 
 Extension functions like `select()`, `insert()`, and `execute()` will target both `DataSource` and JDBC `Connection` types.
 
