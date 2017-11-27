@@ -2,12 +2,36 @@
 
 Fluent, concise, and easy-to-use extension functions targeting JDBC in the Kotlin language with [RxJava 2.0](https://github.com/ReactiveX/RxJava).
 
-This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidmoten/rxjava-jdbc) but seeks to be much more lightweight by leveraging Kotlin functions. This also works best with a threadpool `DataSource` library such as [HikariCP](https://github.com/brettwooldridge/HikariCP). 
+This library is inspired by Dave Moten's [RxJava-JDBC](https://github.com/davidmoten/rxjava-jdbc) but seeks to be much more lightweight by leveraging Kotlin functions. This works with threadpool `DataSource` implementations such as [HikariCP](https://github.com/brettwooldridge/HikariCP), but can also be used with vanilla JDBC `Connection`s.
 
+Extension functions like `select()`, `insert()`, and `execute()` will target both `DataSource` and JDBC `Connection` types.
 
 ## Binaries
 
-Until this is finalized enough to release to Maven Central, you can use JitPack.io to build with Maven or Gradle:
+
+**Maven**
+
+```xml
+<dependency>
+  <groupId>org.nield</groupId>
+  <artifactId>rxkotlin-jdbc</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+**Gradle**
+
+```groovy
+repositories {
+    mavenCentral()
+}
+dependencies {
+    compile 'org.nield:rxkotlin-jdbc:0.1.0'
+}
+```
+
+
+You can also use JitPack.io to build a snapshot with Maven or Gradle:
 
 **Gradle**
 
@@ -37,15 +61,20 @@ dependencies {
 </dependency>
 ```
 
-## Usage Example: 
+## DataSource Usage Examples
+
+When you use a `DataSource`, a `Connection` will automatically be pulled from the pool upon subscription and given back when `onComplete` is called.
+
 
 ```kotlin
 val config = HikariConfig()
-config.jdbcUrl = "jdbc:sqlite:/home/thomas/Desktop/test.db"
+config.jdbcUrl = "jdbc:sqlite::memory:"
 config.minimumIdle = 3
 config.maximumPoolSize = 10
 
 val ds = HikariDataSource(config)
+
+//initialize
 
 with(ds) {
     execute("CREATE TABLE USER (ID INTEGER PRIMARY KEY, USERNAME VARCHAR(30) NOT NULL, PASSWORD VARCHAR(30) NOT NULL)")
@@ -53,14 +82,53 @@ with(ds) {
     execute("INSERT INTO USER (USERNAME,PASSWORD) VALUES (?,?)", "bobmarshal","batman43")
 }
 
+// Retrieve all users
 ds.select("SELECT * FROM USER")
         .toObservable { it.getInt("ID") to it.getString("USERNAME") }
         .subscribe(::println)
+
+
+// Retrieve user with specific ID
+ds.select("SELECT * FROM USER WHERE ID = :id")
+        .parameter("id", 2)
+        .toSingle { it.getInt("ID") to it.getString("USERNAME") }
+        .subscribeBy(::println)
+
+// Execute insert which return generated keys, and re-select the inserted record with that key
+ds.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
+        .parameter("username","josephmarlon")
+        .parameter("password","coffeesnob43")
+        .toFlowable { it.getInt(1) }
+        .flatMapSingle {
+            conn.select("SELECT * FROM USER WHERE ID = :id")
+                    .parameter("id", it)
+                    .toSingle { "${it.getInt("ID")} ${it.getString("USERNAME")} ${it.getString("PASSWORD")}" }
+        }
+        .subscribe(::println)
+
+// Run deletion
+
+conn.execute("DELETE FROM USER WHERE ID = :id")
+        .parameter("id",2)
+        .toSingle()
+        .subscribeBy(::println)
 ```
 
-**OUTPUT:**
+## Connection Usage Example
+
+You can also use a standard `Connection` with these extension functions, and closing will not happen automatically so you can micromanage the life of that connection.
+
+```kotlin
+val connection = DriverManager.getConnection("jdbc:sqlite::memory:")
+
+connection.select("SELECT * FROM USER")
+        .toObservable { it.getInt("ID") to it.getString("USERNAME") }
+        .subscribe(::println)
 
 ```
-(1, thomasnield)
-(2, bobmarshal)
-```
+
+
+## Future Developments
+
+* [ ] Batch write support
+* [ ] Observable/Flowable parameter inputs
