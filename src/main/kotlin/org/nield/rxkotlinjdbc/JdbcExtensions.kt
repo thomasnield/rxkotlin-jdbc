@@ -93,7 +93,7 @@ class PreparedStatementBuilder(
     }
 
     fun parameters(vararg parameters: Any?) {
-        furtherOps += { it.processParameters(parameters) }
+        parameters.forEach { parameter(it) }
     }
     fun parameter(parameter: Pair<String,Any?>) {
         parameter(parameter.first, parameter.second)
