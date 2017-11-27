@@ -15,7 +15,7 @@ Extension functions like `select()`, `insert()`, and `execute()` will target bot
 <dependency>
   <groupId>org.nield</groupId>
   <artifactId>rxkotlin-jdbc</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
@@ -26,7 +26,7 @@ repositories {
     mavenCentral()
 }
 dependencies {
-    compile 'org.nield:rxkotlin-jdbc:0.1.0'
+    compile 'org.nield:rxkotlin-jdbc:0.1.1'
 }
 ```
 
@@ -126,9 +126,3 @@ connection.select("SELECT * FROM USER")
         .subscribe(::println)
 
 ```
-
-
-## Future Developments
-
-* [ ] Batch write support
-* [ ] Observable/Flowable parameter inputs
