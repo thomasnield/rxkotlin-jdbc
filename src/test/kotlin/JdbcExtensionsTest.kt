@@ -58,6 +58,17 @@ class DatabaseTest {
     }
 
     @Test
+    fun testSequence() {
+        val conn = connectionFactory()
+
+        conn.select("SELECT * FROM USER").toSequence { it.getInt("ID") }.apply {
+
+                take(1).forEach(::println)
+        }
+
+    }
+
+    @Test
     fun parameterTest() {
         val conn = connectionFactory()
 

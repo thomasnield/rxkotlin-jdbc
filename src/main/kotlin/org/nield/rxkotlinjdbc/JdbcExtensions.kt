@@ -119,9 +119,9 @@ class SelectOperation(
         val autoClose: Boolean
 ) {
 
-    val builder = PreparedStatementBuilder(connectionGetter,{sql,conn -> conn.prepareStatement(sql) },sqlTemplate)
+    val builder = PreparedStatementBuilder(connectionGetter, { sql, conn -> conn.prepareStatement(sql) }, sqlTemplate)
 
-    fun parameters(vararg parameters: Pair<String,Any?>): SelectOperation {
+    fun parameters(vararg parameters: Pair<String, Any?>): SelectOperation {
         builder.parameters(parameters)
         return this
     }
@@ -135,39 +135,43 @@ class SelectOperation(
         builder.parameters(parameters)
         return this
     }
-    fun parameter(parameter: Pair<String,Any?>): SelectOperation {
+
+    fun parameter(parameter: Pair<String, Any?>): SelectOperation {
         builder.parameter(parameter)
         return this
     }
+
     fun parameter(parameter: String, value: Any?): SelectOperation {
-        builder.parameter(parameter,value)
+        builder.parameter(parameter, value)
         return this
     }
 
-    fun <T: Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
+    fun <T : Any> toObservable(mapper: (ResultSet) -> T) = Observable.defer {
         val cps = builder.toPreparedStatement()
-        ResultSetState({cps.ps.executeQuery()}, cps.ps, cps.conn, autoClose).toObservable(mapper)
+        ResultSetState({ cps.ps.executeQuery() }, cps.ps, cps.conn, autoClose).toObservable(mapper)
     }
 
-    fun <T: Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
+    fun <T : Any> toFlowable(mapper: (ResultSet) -> T) = Flowable.defer {
         val cps = builder.toPreparedStatement()
-        ResultSetState({cps.ps.executeQuery()}, cps.ps, cps.conn, autoClose).toFlowable(mapper)
+        ResultSetState({ cps.ps.executeQuery() }, cps.ps, cps.conn, autoClose).toFlowable(mapper)
     }
 
-    fun <T: Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
+    fun <T : Any> toSingle(mapper: (ResultSet) -> T) = Single.defer {
         toObservable(mapper).singleOrError()
     }
 
-    fun <T: Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
+    fun <T : Any> toMaybe(mapper: (ResultSet) -> T) = Maybe.defer {
         toObservable(mapper).singleElement()
     }
 
     fun toCompletable() = toFlowable { Unit }.ignoreElements()
 
-    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
-            toObservable(mapper).blockingIterable().asSequence()
-
+    fun <T : Any> toSequence(mapper: (ResultSet) -> T): ResultSetSequence<T> {
+        val cps = builder.toPreparedStatement()
+        return ResultSetState({ cps.ps.executeQuery() }, cps.ps, cps.conn, autoClose).toSequence(mapper)
+    }
 }
+
 
 class InsertOperation(
         sqlTemplate: String,
@@ -273,6 +277,7 @@ class ResultSetState(
         val connection: Connection? = null,
         val autoClose: Boolean
 ) {
+
     fun <T: Any> toObservable(mapper: (ResultSet) -> T): Observable<T> {
 
         return Observable.defer {
@@ -291,13 +296,22 @@ class ResultSetState(
                     .doOnCancel { iterator.cancel() }
         }
     }
+
+    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
+            QueryIterator(this, resultSetGetter(), mapper, autoClose).let(::ResultSetSequence)
+
+}
+
+class  ResultSetSequence<out T>(private val queryIterator: QueryIterator<T>): Sequence<T> {
+    override fun iterator() = queryIterator
+    fun close() = queryIterator.close()
 }
 
 class QueryIterator<out T>(val qs: ResultSetState,
                            val rs: ResultSet,
                            val mapper: (ResultSet) -> T,
                            val autoClose: Boolean
-) : Iterator<T> {
+) : Iterator<T>, AutoCloseable {
 
     private var didNext = false
     private var hasNext = false
@@ -321,6 +335,9 @@ class QueryIterator<out T>(val qs: ResultSetState,
             hasNext = rs.next()
             didNext = true
         }
+        if (!hasNext)
+            close()
+
         return hasNext
     }
 
@@ -328,7 +345,7 @@ class QueryIterator<out T>(val qs: ResultSetState,
         override fun iterator(): Iterator<T> = this@QueryIterator
     }
 
-    fun close() {
+    override fun close() {
         rs.close()
         qs.statement?.close()
         if (autoClose)
