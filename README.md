@@ -128,7 +128,7 @@ connection.select("SELECT * FROM USER")
 
 ```
 
-### Blocking Sequences
+## Blocking Sequences
 
 It can be convenient to work with JDBC fluently in a blocking manner, so you don't always have to return everything as an `Observable` or `Flowable`. While you should strive to not break the monad, sometimes it is easier to not have items returned in reactive fashion. This is especially the case when you have reactively built `T` objects, but you want to retrieve metadata `U` and `V` objects when `T` is constructed.
 
