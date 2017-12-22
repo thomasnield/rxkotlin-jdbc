@@ -2,6 +2,8 @@
 import io.reactivex.Observable
 import io.reactivex.observers.TestObserver
 import io.reactivex.subscribers.TestSubscriber
+import junit.framework.Assert.assertFalse
+import junit.framework.Assert.assertTrue
 import org.junit.Test
 import org.nield.rxkotlinjdbc.execute
 import org.nield.rxkotlinjdbc.insert
@@ -61,11 +63,32 @@ class DatabaseTest {
     fun testSequence() {
         val conn = connectionFactory()
 
+        data class User(val id: Int, val userName: String, val password: String)
+
+        conn.select("SELECT * FROM USER").toSequence {
+            User(it.getInt("ID"), it.getString("USERNAME"), it.getString("PASSWORD"))
+        }.forEach(::println)
+    }
+    @Test
+    fun testSequenceCancel() {
+        val conn = connectionFactory()
+
         conn.select("SELECT * FROM USER").toSequence { it.getInt("ID") }.apply {
-
                 take(1).forEach(::println)
-        }
 
+            assertFalse(isClosed)
+            close()
+            assertTrue(isClosed)
+        }
+    }
+
+    @Test
+    fun testFirst() {
+        val conn = connectionFactory()
+
+        val id = conn.select("SELECT * FROM USER WHERE ID = 1").blockingFirst { it.getInt("ID") }
+
+        assertTrue(id == 1)
     }
 
     @Test
@@ -153,11 +176,32 @@ class DatabaseTest {
                 .flatMapSingle {
                     conn.select("SELECT * FROM USER WHERE ID = :id")
                             .parameter("id", it)
-                            .toSingle { "${it.getInt("ID")} ${it.getString("USERNAME")} ${it.getString("PASSWORD")}" }
+                            .toSingle { it.getInt("id") }
                 }
-                .subscribe(::println)
+                .subscribe(testSubscriber)
 
         testSubscriber.assertValues(3)
+
+        conn.close()
+    }
+
+    @Test
+    fun blockingInsertTest() {
+        val conn = connectionFactory()
+
+        conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
+                .parameter("username","josephmarlon")
+                .parameter("password","coffeesnob43")
+                .blockingFirst {
+                    val id = it.getInt(1)
+                    conn.select("SELECT * FROM USER WHERE ID = :id")
+                            .parameter("id", id)
+                            .blockingFirst { it.getInt("id") }
+                }.apply {
+                    println(this)
+                    assertTrue(this > 0)
+                }
+
 
         conn.close()
     }
@@ -214,4 +258,5 @@ class DatabaseTest {
 
         conn.close()
     }
+
 }

@@ -170,6 +170,17 @@ class SelectOperation(
         val cps = builder.toPreparedStatement()
         return ResultSetState({ cps.ps.executeQuery() }, cps.ps, cps.conn, autoClose).toSequence(mapper)
     }
+
+    fun <T: Any> blockingFirst(mapper: (ResultSet) -> T) = toSequence(mapper).let {
+        val result = it.first()
+        it.close()
+        result
+    }
+    fun <T: Any> blockingFirstOrNull(mapper: (ResultSet) -> T) = toSequence(mapper).let {
+        val result = it.firstOrNull()
+        it.close()
+        result
+    }
 }
 
 
@@ -230,9 +241,24 @@ class InsertOperation(
 
     fun toCompletable() = toFlowable { Unit }.ignoreElements()
 
-    fun <T: Any> toSequence(mapper: (ResultSet) -> T) =
-            toObservable(mapper).blockingIterable().asSequence()
+    fun <T : Any> toSequence(mapper: (ResultSet) -> T): ResultSetSequence<T> {
+        val cps = builder.toPreparedStatement()
+        return ResultSetState({
+            cps.ps.executeUpdate()
+            cps.ps.generatedKeys
+        }, cps.ps, cps.conn, autoClose).toSequence(mapper)
+    }
 
+    fun <T: Any> blockingFirst(mapper: (ResultSet) -> T) = toSequence(mapper).let {
+        val result = it.first()
+        it.close()
+        result
+    }
+    fun <T: Any> blockingFirstOrNull(mapper: (ResultSet) -> T) = toSequence(mapper).let {
+        val result = it.firstOrNull()
+        it.close()
+        result
+    }
 }
 
 class UpdateOperation(
@@ -305,6 +331,7 @@ class ResultSetState(
 class  ResultSetSequence<out T>(private val queryIterator: QueryIterator<T>): Sequence<T> {
     override fun iterator() = queryIterator
     fun close() = queryIterator.close()
+    val isClosed get() = queryIterator.rs.isClosed
 }
 
 class QueryIterator<out T>(val qs: ResultSetState,
@@ -354,6 +381,7 @@ class QueryIterator<out T>(val qs: ResultSetState,
     fun cancel() {
         cancelled.set(true)
     }
+
     private fun excecuteCancel() {
         rs.close()
         qs.statement?.close()
