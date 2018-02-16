@@ -89,7 +89,6 @@ class PreparedStatementBuilder(
     }
 
     fun parameters(vararg parameters: Any?) {
-
         if (parameters[0] is Array<*>) {
             (parameters[0] as Array<*>).forEach {
                 parameter(it)
@@ -100,6 +99,7 @@ class PreparedStatementBuilder(
             }
         }
     }
+
     fun parameter(parameter: Pair<String,Any?>) {
         parameter(parameter.first, parameter.second)
     }
