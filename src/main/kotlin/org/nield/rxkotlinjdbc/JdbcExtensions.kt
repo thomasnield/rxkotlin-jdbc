@@ -84,16 +84,21 @@ class PreparedStatementBuilder(
             .withIndex()
             .groupBy({it.value},{it.index})
 
-    fun parameters(vararg parameters: Pair<String,Any?>) {
-        parameters.forEach { parameter(it) }
-    }
-
     fun parameter(value: Any?) {
         furtherOps += { it.processParameter(namelessParameterIndex.getAndIncrement(), value) }
     }
 
     fun parameters(vararg parameters: Any?) {
-        parameters.forEach { parameter(it) }
+
+        if (parameters[0] is Array<*>) {
+            (parameters[0] as Array<*>).forEach {
+                parameter(it)
+            }
+        } else {
+            parameters.forEach {
+                parameter(it)
+            }
+        }
     }
     fun parameter(parameter: Pair<String,Any?>) {
         parameter(parameter.first, parameter.second)
@@ -191,11 +196,6 @@ class InsertOperation(
 ) {
 
     val builder = PreparedStatementBuilder(connectionGetter,{sql, conn -> conn.prepareStatement(sql, RETURN_GENERATED_KEYS)},sqlTemplate)
-
-    fun parameters(vararg parameters: Pair<String,Any?>): InsertOperation {
-        builder.parameters(parameters)
-        return this
-    }
 
     fun parameter(value: Any?): InsertOperation {
         builder.parameter(value)

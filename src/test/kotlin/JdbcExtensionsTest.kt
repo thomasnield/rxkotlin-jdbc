@@ -228,6 +228,27 @@ class DatabaseTest {
     }
 
     @Test
+    fun multiInsertTest2() {
+        val conn = connectionFactory()
+        val testObserver = TestObserver<Int>()
+
+        Observable.just(
+                Pair("josephmarlon", "coffeesnob43"),
+                Pair("samuelfoley","shiner67"),
+                Pair("emilyearly","rabbit99")
+        ).flatMapSingle {
+            conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)")
+                    .parameters(it.first, it.second)
+                    .toSingle { it.getInt(1) }
+        }.subscribe(testObserver)
+
+        testObserver.assertValues(3,4,5)
+
+        conn.close()
+    }
+
+
+    @Test
     fun deleteTest() {
 
         val conn = connectionFactory()
