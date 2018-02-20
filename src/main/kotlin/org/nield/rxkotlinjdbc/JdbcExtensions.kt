@@ -85,7 +85,7 @@ class PreparedStatementBuilder(
             .groupBy({it.value},{it.index})
 
     fun parameter(value: Any?) {
-        furtherOps += { it.processParameter(namelessParameterIndex.getAndIncrement(), value) }
+        furtherOps += { it.processParameter(namelessParameterIndex.incrementAndGet(), value) }
     }
 
     fun parameters(vararg parameters: Any?) {
