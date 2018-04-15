@@ -71,7 +71,7 @@ class PreparedStatementBuilder(
 
 ) {
 
-    private val namelessParameterIndex = AtomicInteger(0)
+    private val namelessParameterIndex = AtomicInteger(-1)
     val sql: String = sqlTemplate.replace(parameterRegex,"?")
     val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 
