@@ -25,40 +25,10 @@ repositories {
     mavenCentral()
 }
 dependencies {
-    compile 'org.nield:rxkotlin-jdbc:0.2.0'
+    compile 'org.nield:rxkotlin-jdbc:0.2.4'
 }
 ```
 
-
-You can also use JitPack.io to build a snapshot with Maven or Gradle:
-
-**Gradle**
-
-```groovy
-repositories {
-    maven { url 'https://jitpack.io' }
-}
-dependencies {
-    compile 'com.github.thomasnield:rxkotlin-jdbc:-SNAPSHOT'
-}
-```
-
-**Maven**
-
-```xml
-<repositories>
-    <repository>
-        <id>jitpack.io</id>
-        <url>https://jitpack.io</url>
-    </repository>
-</repositories>
-
-<dependency>
-    <groupId>com.github.thomasnield</groupId>
-    <artifactId>rxkotlin-jdbc</artifactId>
-    <version>-SNAPSHOT</version>
-</dependency>
-```
 
 ## Managing JDBC with Observables and Flowables
 
