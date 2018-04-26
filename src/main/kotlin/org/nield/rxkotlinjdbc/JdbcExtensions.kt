@@ -414,3 +414,12 @@ fun PreparedStatement.processParameter(pos: Int, argVal: Any?) {
         is Enum<*> -> setObject(pos + 1, argVal)
     }
 }
+
+
+fun ResultSet.asList() =  (1..this.metaData.columnCount).asSequence().map {
+    this.getObject(it)
+}.toList()
+
+fun ResultSet.asMap() =  (1..this.metaData.columnCount).asSequence().map {
+    metaData.getColumnName(it) to getObject(it)
+}.toMap()

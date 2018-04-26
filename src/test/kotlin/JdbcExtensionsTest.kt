@@ -5,9 +5,7 @@ import io.reactivex.subscribers.TestSubscriber
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
 import org.junit.Test
-import org.nield.rxkotlinjdbc.execute
-import org.nield.rxkotlinjdbc.insert
-import org.nield.rxkotlinjdbc.select
+import org.nield.rxkotlinjdbc.*
 import java.sql.DriverManager
 
 class DatabaseTest {
@@ -338,5 +336,33 @@ class DatabaseTest {
         testObserver.assertValues(1)
 
         conn.close()
+    }
+
+    @Test
+    fun asListTest() {
+        val conn = connectionFactory()
+        val testObserver = TestObserver<List<Any?>>()
+
+
+        conn.select("SELECT * FROM USER WHERE ID = ?")
+                .parameter(1)
+                .toObservable { it.asList() }
+                .subscribe(testObserver)
+
+        testObserver.assertValues(listOf(1, "thomasnield", "password123"))
+    }
+
+    @Test
+    fun asMapTest() {
+        val conn = connectionFactory()
+        val testObserver = TestObserver<Map<String,Any?>>()
+
+
+        conn.select("SELECT * FROM USER WHERE ID = ?")
+                .parameter(1)
+                .toObservable { it.asMap() }
+                .subscribe(testObserver)
+
+        testObserver.assertValues(mapOf("ID" to 1, "USERNAME" to "thomasnield", "PASSWORD" to "password123"))
     }
 }
