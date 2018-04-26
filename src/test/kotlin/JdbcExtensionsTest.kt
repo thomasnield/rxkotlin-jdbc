@@ -185,6 +185,51 @@ class DatabaseTest {
         conn.close()
     }
 
+
+    @Test
+    fun singleInsertTest2() {
+        val conn = connectionFactory()
+
+        val testSubscriber = TestSubscriber<Int>()
+
+        conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)")
+                .parameter("username" to "josephmarlon")
+                .parameter("password" to "coffeesnob43")
+                .toFlowable { it.getInt(1) }
+                .flatMapSingle {
+                    conn.select("SELECT * FROM USER WHERE ID = :id")
+                            .parameter("id", it)
+                            .toSingle { it.getInt("id") }
+                }
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValues(3)
+
+        conn.close()
+    }
+
+    @Test
+    fun singleInsertTest3() {
+        val conn = connectionFactory()
+
+        val testSubscriber = TestSubscriber<Int>()
+
+        conn.insert("INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)")
+                .parameters("josephmarlon","coffeesnob43")
+                .toFlowable { it.getInt(1) }
+                .flatMapSingle {
+                    conn.select("SELECT * FROM USER WHERE ID = :id")
+                            .parameter("id", it)
+                            .toSingle { it.getInt("id") }
+                }
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValues(3)
+
+        conn.close()
+    }
+
+
     @Test
     fun blockingInsertTest() {
         val conn = connectionFactory()
@@ -279,5 +324,19 @@ class DatabaseTest {
 
         conn.close()
     }
+    @Test
+    fun updateTest2() {
 
+        val conn = connectionFactory()
+        val testObserver = TestObserver<Int>()
+
+        conn.execute("UPDATE USER SET PASSWORD = ? WHERE ID = ?")
+                .parameters("squirrel56", 1)
+                .toSingle()
+                .subscribe(testObserver)
+
+        testObserver.assertValues(1)
+
+        conn.close()
+    }
 }
