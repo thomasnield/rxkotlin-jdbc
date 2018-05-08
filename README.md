@@ -14,7 +14,7 @@ Extension functions like `select()`, `insert()`, and `execute()` will target bot
 <dependency>
   <groupId>org.nield</groupId>
   <artifactId>rxkotlin-jdbc</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.4</version>
 </dependency>
 ```
 
