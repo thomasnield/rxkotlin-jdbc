@@ -4,6 +4,7 @@ import io.reactivex.observers.TestObserver
 import io.reactivex.subscribers.TestSubscriber
 import junit.framework.Assert.assertFalse
 import junit.framework.Assert.assertTrue
+import org.junit.Assert
 import org.junit.Test
 import org.nield.rxkotlinjdbc.*
 import java.sql.DriverManager
@@ -364,5 +365,43 @@ class DatabaseTest {
                 .subscribe(testObserver)
 
         testObserver.assertValues(mapOf("ID" to 1, "USERNAME" to "thomasnield", "PASSWORD" to "password123"))
+    }
+
+    @Test
+    fun pipelineTest() {
+        val conn = connectionFactory()
+
+        data class User(val userName: String, val password: String)
+
+        val testObserver = TestObserver<User>()
+        val testSubscriber = TestSubscriber<User>()
+
+        val pipeline = conn.select("SELECT * FROM USER")
+                .toPipeline {
+                    User(it.getString("USERNAME"), it.getString("PASSWORD"))
+                }
+
+
+        pipeline.toObservable().subscribe(testObserver)
+
+        testObserver.assertValues(
+                User("thomasnield","password123"),
+                User("bobmarshal","batman43")
+        )
+
+
+        pipeline.toFlowable().subscribe(testSubscriber)
+
+        testSubscriber.assertValues(
+                User("thomasnield","password123"),
+                User("bobmarshal","batman43")
+        )
+
+        Assert.assertTrue(
+            pipeline.toSequence().toSet() == setOf(
+                    User("thomasnield","password123"),
+                    User("bobmarshal","batman43")
+            )
+        )
     }
 }

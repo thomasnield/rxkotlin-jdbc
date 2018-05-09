@@ -135,3 +135,38 @@ val id = conn.select("SELECT * FROM USER WHERE ID = 1").blockingFirst { it.getIn
 
 println(id)
 ```
+
+## Allowing Choice of Sequence, Observable, or Flowable
+
+This library supports emitting `T` items built off a `ResultSet` in the form of:
+
+* `Sequence<T>`
+* `Observable<T>`
+* `Flowable<T>`
+* `Single<T>`
+* `Maybe<T>`
+
+If you are building an API, it may be handy to allow the user of the API to choose the means in which to receive the results.
+
+The `toPipeline()` function will allow mapping the `ResultSet` to `T` items, but defer to the API user how to receive the results.
+
+
+```kotlin
+
+data class User(val userName: String, val password: String)
+
+fun getUsers() = conn.select("SELECT * FROM USER")
+                .toPipeline {
+                    User(it.getString("USERNAME"), it.getString("PASSWORD"))
+                }
+
+fun main(args: Array<String>) {
+
+    getUsers().asFlowable().subscribe { println("Receiving $it via Flowable") }
+
+    getUsers().asObservable().subscribe { println("Receiving $it via Observable") }
+
+    getUsers().asSequence().forEach { println("Receiving $it via Sequence") }
+}
+
+```
