@@ -162,11 +162,11 @@ fun getUsers() = conn.select("SELECT * FROM USER")
 
 fun main(args: Array<String>) {
 
-    getUsers().asFlowable().subscribe { println("Receiving $it via Flowable") }
+    getUsers().toFlowable().subscribe { println("Receiving $it via Flowable") }
 
-    getUsers().asObservable().subscribe { println("Receiving $it via Observable") }
+    getUsers().toObservable().subscribe { println("Receiving $it via Observable") }
 
-    getUsers().asSequence().forEach { println("Receiving $it via Sequence") }
+    getUsers().toSequence().forEach { println("Receiving $it via Sequence") }
 }
 
 ```
