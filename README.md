@@ -168,7 +168,7 @@ fun main(args: Array<String>) {
 
     getUsers().toSequence().forEach { println("Receiving $it via Sequence") }
 }
-
+```
 
 ## Building Where Conditions Fluently
 
