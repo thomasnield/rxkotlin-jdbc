@@ -404,4 +404,29 @@ class DatabaseTest {
             )
         )
     }
+
+    @Test
+    fun whereIfProvided1() {
+        val conn = connectionFactory()
+
+        fun userOf(id: Int? = null, userName: String? = null, password: String? = null) =
+                conn.select("SELECT * FROM USER")
+                        .whereIfProvided("ID", id)
+                        .whereIfProvided("USERNAME", userName)
+                        .whereIfProvided("PASSWORD", password)
+                        .toObservable { it.getInt("ID") }
+
+
+        val observer1 = TestObserver<Int>()
+        userOf().subscribe(observer1)
+        observer1.assertValues(1,2)
+
+        val observer2 = TestObserver<Int>()
+        userOf(userName = "thomasnield", password = "password123").subscribe(observer2)
+        observer2.assertValues(1)
+
+        val observer3 = TestObserver<Int>()
+        userOf(id = 2).subscribe(observer3)
+        observer3.assertValues(2)
+    }
 }

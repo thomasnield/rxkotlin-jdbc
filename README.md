@@ -169,4 +169,37 @@ fun main(args: Array<String>) {
     getUsers().toSequence().forEach { println("Receiving $it via Sequence") }
 }
 
+
+## Building Where Conditions Fluently
+
+An experimental feature in RxKotlin-JDBC is an API-friendly builder for WHERE conditions, that may or may not use certain parameters to build WHERE conditions.
+
+For instance, here is a function that will query a table with three possible parameters:
+
+```kotlin
+fun userOf(id: Int? = null, userName: String? = null, password: String? = null) =
+        conn.select("SELECT * FROM USER")
+                .whereIfProvided("ID", id)
+                .whereIfProvided("USERNAME", userName)
+                .whereIfProvided("PASSWORD", password)
+                .toObservable(::User)
+```
+
+We can then query for any combination of these three parameters (including none of them).
+
+```kotlin
+userOf().subscribe { println(it) } // prints all users
+
+userOf(userName = "thomasnield", password = "password123")
+     .subscribe { println(it) }  // prints user with ID 1
+
+
+userOf(id = 2).subscribe { println(it) } // prints user with ID 2
+```
+
+Instead of providing a simple field name, we can also provide an entire templated expression for more complex condtions.
+
+```kotlin
+conn.select("SELECT * FROM USER")
+       .whereIfProvided("ID > ?", 1)
 ```

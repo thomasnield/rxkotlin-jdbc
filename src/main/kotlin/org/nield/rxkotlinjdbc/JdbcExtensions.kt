@@ -4,6 +4,7 @@ import io.reactivex.Flowable
 import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Single
+import io.reactivex.annotations.Experimental
 import java.io.InputStream
 import java.math.BigDecimal
 import java.sql.Connection
@@ -72,17 +73,19 @@ class PreparedStatementBuilder(
 ) {
 
     private val namelessParameterIndex = AtomicInteger(-1)
-    val sql: String = sqlTemplate.replace(parameterRegex,"?")
+    var sql: String = sqlTemplate.replace(parameterRegex,"?")
     val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 
     companion object {
         private val parameterRegex = Regex(":[_A-Za-z0-9]+")
     }
 
-    private val mappedParameters = parameterRegex.findAll(sqlTemplate).asSequence()
-            .map { it.value }
-            .withIndex()
-            .groupBy({it.value},{it.index})
+    private val mappedParameters by lazy {
+        parameterRegex.findAll(sqlTemplate).asSequence()
+                .map { it.value }
+                .withIndex()
+                .groupBy({ it.value }, { it.index })
+    }
 
     fun parameter(value: Any?) {
         furtherOps += { it.processParameter(namelessParameterIndex.incrementAndGet(), value) }
@@ -108,6 +111,31 @@ class PreparedStatementBuilder(
                 .asSequence()
                 .forEach { i -> furtherOps += { it.processParameter(i, value) } }
     }
+
+    private var conditionCount = 0
+
+    @Experimental
+    fun whereIfProvided(field: String, value: Any?) {
+        if (value != null) {
+            if (conditionCount == 0) {
+                sql = "$sql WHERE"
+            }
+            conditionCount++
+
+            if (conditionCount > 1) {
+                sql = "$sql AND "
+            }
+
+            sql = if (field.contains(" ")) {
+                "$sql $field"
+            } else {
+                "$sql $field = ?"
+            }
+            parameter(value)
+        }
+    }
+
+
     fun toPreparedStatement(): ConnectionAndPreparedStatement {
         val conn = connectionGetter()
         val ps = preparedStatementGetter(sql, conn)
@@ -115,6 +143,7 @@ class PreparedStatementBuilder(
         return ConnectionAndPreparedStatement(conn,ps)
     }
 }
+
 
 class ConnectionAndPreparedStatement(val conn: Connection, val ps: PreparedStatement)
 
@@ -124,7 +153,9 @@ class SelectOperation(
         val autoClose: Boolean
 ) {
 
-    val builder = PreparedStatementBuilder(connectionGetter, { sql, conn -> conn.prepareStatement(sql) }, sqlTemplate)
+    val builder = PreparedStatementBuilder(connectionGetter, { sql, conn ->
+        conn.prepareStatement(sql)
+    }, sqlTemplate)
 
     fun parameters(vararg parameters: Pair<String, Any?>): SelectOperation {
         builder.parameters(parameters)
@@ -143,6 +174,14 @@ class SelectOperation(
 
     fun parameter(parameter: Pair<String, Any?>): SelectOperation {
         builder.parameter(parameter)
+        return this
+    }
+
+    @Experimental
+    fun whereIfProvided(fieldOrTemplate: String, value: Any?): SelectOperation {
+        if (value != null) {
+            builder.whereIfProvided(fieldOrTemplate, value)
+        }
         return this
     }
 
