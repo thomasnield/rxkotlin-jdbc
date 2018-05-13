@@ -46,7 +46,7 @@ signing {
 
 group = "org.nield"
 archivesBaseName = "rxkotlin-jdbc"
-version = "0.2.7"
+version = "0.2.8"
 
 uploadArchives {
     repositories {

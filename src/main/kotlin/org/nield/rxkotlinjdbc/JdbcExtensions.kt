@@ -68,12 +68,12 @@ fun DataSource.insert(insertSQL: String) =
 class PreparedStatementBuilder(
         val connectionGetter: () -> Connection,
         val preparedStatementGetter: (String,Connection) -> PreparedStatement,
-        sqlTemplate: String
+        var sqlTemplate: String
 
 ) {
 
     private val namelessParameterIndex = AtomicInteger(-1)
-    var sql: String = sqlTemplate.replace(parameterRegex,"?")
+    val sql: String by lazy { sqlTemplate.replace(parameterRegex,"?") }
     val furtherOps: MutableList<(PreparedStatement) -> Unit> = mutableListOf()
 
     companion object {
@@ -107,7 +107,7 @@ class PreparedStatementBuilder(
         parameter(parameter.first, parameter.second)
     }
     fun parameter(parameter: String, value: Any?) {
-        (mappedParameters[":" + parameter] ?: throw Exception("Parameter $parameter not found!}"))
+        (mappedParameters[":$parameter"] ?: throw Exception("Parameter $parameter not found!}"))
                 .asSequence()
                 .forEach { i -> furtherOps += { it.processParameter(i, value) } }
     }
@@ -118,18 +118,18 @@ class PreparedStatementBuilder(
     fun whereIfProvided(field: String, value: Any?) {
         if (value != null) {
             if (conditionCount == 0) {
-                sql = "$sql WHERE"
+                sqlTemplate = "$sqlTemplate WHERE"
             }
             conditionCount++
 
             if (conditionCount > 1) {
-                sql = "$sql AND "
+                sqlTemplate = "$sqlTemplate AND "
             }
 
-            sql = if (field.contains(" ")) {
-                "$sql $field"
+            sqlTemplate = if (!field.matches(Regex("[A-Za-z0-9_]+"))) {
+                "$sqlTemplate $field"
             } else {
-                "$sql $field = ?"
+                "$sqlTemplate $field = ?"
             }
             parameter(value)
         }

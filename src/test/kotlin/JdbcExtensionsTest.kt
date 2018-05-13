@@ -66,14 +66,14 @@ class DatabaseTest {
 
         conn.select("SELECT * FROM USER").toSequence {
             User(it.getInt("ID"), it.getString("USERNAME"), it.getString("PASSWORD"))
-        }.forEach(::println)
+        }.count().let { Assert.assertTrue(it == 2) }
     }
     @Test
     fun testSequenceCancel() {
         val conn = connectionFactory()
 
         conn.select("SELECT * FROM USER").toSequence { it.getInt("ID") }.apply {
-                take(1).forEach(::println)
+                take(1).forEach{ }
 
             assertFalse(isClosed)
             close()
@@ -242,7 +242,6 @@ class DatabaseTest {
                             .parameter("id", id)
                             .blockingFirst { it.getInt("id") }
                 }.apply {
-                    println(this)
                     assertTrue(this > 0)
                 }
 
