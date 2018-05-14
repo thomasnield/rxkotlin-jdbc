@@ -115,7 +115,7 @@ class PreparedStatementBuilder(
     private var conditionCount = 0
 
     @Experimental
-    fun whereIfProvided(field: String, value: Any?) {
+    fun whereOptional(field: String, value: Any?) {
         if (value != null) {
             if (conditionCount == 0) {
                 sqlTemplate = "$sqlTemplate WHERE"
@@ -178,9 +178,9 @@ class SelectOperation(
     }
 
     @Experimental
-    fun whereIfProvided(fieldOrTemplate: String, value: Any?): SelectOperation {
+    fun whereOptional(fieldOrTemplate: String, value: Any?): SelectOperation {
         if (value != null) {
-            builder.whereIfProvided(fieldOrTemplate, value)
+            builder.whereOptional(fieldOrTemplate, value)
         }
         return this
     }

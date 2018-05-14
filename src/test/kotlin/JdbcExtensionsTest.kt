@@ -405,14 +405,14 @@ class DatabaseTest {
     }
 
     @Test
-    fun whereIfProvided1() {
+    fun whereOptional1() {
         val conn = connectionFactory()
 
         fun userOf(id: Int? = null, userName: String? = null, password: String? = null) =
                 conn.select("SELECT * FROM USER")
-                        .whereIfProvided("ID", id)
-                        .whereIfProvided("USERNAME", userName)
-                        .whereIfProvided("PASSWORD", password)
+                        .whereOptional("ID", id)
+                        .whereOptional("USERNAME", userName)
+                        .whereOptional("PASSWORD", password)
                         .toObservable { it.getInt("ID") }
 
 
@@ -427,5 +427,23 @@ class DatabaseTest {
         val observer3 = TestObserver<Int>()
         userOf(id = 2).subscribe(observer3)
         observer3.assertValues(2)
+    }
+
+
+    @Test
+    fun whereOptional2() {
+        val conn = connectionFactory()
+
+        fun userOf(id: Int? = null, userName: String? = null, password: String? = null) =
+                conn.select("SELECT * FROM USER")
+                        .whereOptional("ID = :id", id)
+                        .whereOptional("USERNAME = :username", userName)
+                        .whereOptional("PASSWORD = :password", password)
+                        .toObservable { it.getInt("ID") }
+
+
+        val observer2 = TestObserver<Int>()
+        userOf(userName = "thomasnield", password = "password123").subscribe(observer2)
+        observer2.assertValues(1)
     }
 }

@@ -179,9 +179,9 @@ For instance, here is a function that will query a table with three possible par
 ```kotlin
 fun userOf(id: Int? = null, userName: String? = null, password: String? = null) =
         conn.select("SELECT * FROM USER")
-                .whereIfProvided("ID", id)
-                .whereIfProvided("USERNAME", userName)
-                .whereIfProvided("PASSWORD", password)
+                .whereOptional("ID", id)
+                .whereOptional("USERNAME", userName)
+                .whereOptional("PASSWORD", password)
                 .toObservable(::User)
 ```
 
@@ -201,5 +201,5 @@ Instead of providing a simple field name, we can also provide an entire template
 
 ```kotlin
 conn.select("SELECT * FROM USER")
-       .whereIfProvided("ID > ?", 1)
+       .whereOptional("ID > ?", 1)
 ```
