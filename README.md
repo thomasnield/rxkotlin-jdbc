@@ -14,7 +14,7 @@ Extension functions like `select()`, `insert()`, and `execute()` will target bot
 <dependency>
   <groupId>org.nield</groupId>
   <artifactId>rxkotlin-jdbc</artifactId>
-  <version>0.2.4</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
@@ -25,7 +25,7 @@ repositories {
     mavenCentral()
 }
 dependencies {
-    compile 'org.nield:rxkotlin-jdbc:0.2.4'
+    compile 'org.nield:rxkotlin-jdbc:0.3.0'
 }
 ```
 
@@ -87,7 +87,7 @@ conn.execute("DELETE FROM USER WHERE ID = :id")
 
 ### Using Connections
 
-You can also use a standard `Connection` with these extension functions, and closing will not happen automatically so you can micromanage the life of that connection.
+You can also use a standard `Connection` with these extension functions, and closing will not happen automatically so you can micromanage the life of that connection. It is also helpful to execute transactions against an individual connection. 
 
 ```kotlin
 val connection = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -95,8 +95,10 @@ val connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 connection.select("SELECT * FROM USER")
         .toObservable { it.getInt("ID") to it.getString("USERNAME") }
         .subscribe(::println)
-
+        
+connection.close()
 ```
+
 
 ## Blocking Sequences
 
