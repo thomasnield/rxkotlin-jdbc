@@ -338,6 +338,10 @@ class UpdateOperation(
     fun toSingle() = Single.defer {
         Single.just(builder.toPreparedStatement().ps.executeUpdate())
     }
+
+    fun toCompletable() = toSingle().toCompletable()
+
+    fun blockingGet() = builder.toPreparedStatement().ps.executeUpdate()
 }
 
 class ResultSetState(
