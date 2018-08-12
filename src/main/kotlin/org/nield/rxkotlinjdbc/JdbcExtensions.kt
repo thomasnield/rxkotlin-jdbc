@@ -43,17 +43,22 @@ fun Connection.insert(insertSQL: String)  =
             autoClose = false
         )
 
-fun <T> Connection.batchInsert(sqlTemplate: String,
-                               insertElements: Observable<T>,
-                               batchSize: Int,
-                               insertMapper: BatchInsertOperation<T>.(T) -> Unit
-) = BatchInsertOperation(
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> Connection.batchExecute(sqlTemplate: String,
+                                elements: Observable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = false
+) = BatchExecute(
     sqlTemplate = sqlTemplate,
-    insertElements =  insertElements,
+    elements =  elements,
     batchSize = batchSize,
-    insertMapper = insertMapper,
+    parameterMapper = parameterMapper,
     connectionGetter = { this },
-    autoClose = true
+    autoClose = autoClose
 )
 
 
@@ -103,7 +108,7 @@ class PreparedStatementBuilder(
     }
 
     fun parameter(value: Any?) {
-        furtherOps += { it.processParameter(namelessParameterIndex.incrementAndGet(), value) }
+        furtherOps += { it.parameter(namelessParameterIndex.incrementAndGet(), value) }
     }
 
     fun parameters(vararg parameters: Any?) {
@@ -124,7 +129,7 @@ class PreparedStatementBuilder(
     fun parameter(parameter: String, value: Any?) {
         (mappedParameters[":$parameter"] ?: throw Exception("Parameter $parameter not found!}"))
                 .asSequence()
-                .forEach { i -> furtherOps += { it.processParameter(i, value) } }
+                .forEach { i -> furtherOps += { it.parameter(i, value) } }
     }
 
     private var conditionCount = 0
@@ -245,32 +250,32 @@ class SelectOperation(
 }
 
 
-class BatchInsertOperation<T>(
+class BatchExecute<T>(
         sqlTemplate: String,
         connectionGetter: () -> Connection,
         val batchSize: Int,
-        val insertElements: Observable<T>,
-        val insertMapper: BatchInsertOperation<T>.(T) -> Unit,
+        val elements: Observable<T>,
+        val parameterMapper: PreparedStatement.(T) -> Unit,
         val autoClose: Boolean
 ) {
     private val builder = PreparedStatementBuilder(connectionGetter, { sql, conn -> conn.prepareStatement(sql, RETURN_GENERATED_KEYS) }, sqlTemplate)
 
-    fun parameter(value: Any?): BatchInsertOperation<T> {
+    fun parameter(value: Any?): BatchExecute<T> {
         builder.parameter(value)
         return this
     }
 
-    fun parameters(vararg parameters: Any?): BatchInsertOperation<T> {
+    fun parameters(vararg parameters: Any?): BatchExecute<T> {
         builder.parameters(parameters)
         return this
     }
 
-    fun parameter(parameter: Pair<String, Any?>): BatchInsertOperation<T> {
+    fun parameter(parameter: Pair<String, Any?>): BatchExecute<T> {
         builder.parameter(parameter)
         return this
     }
 
-    fun parameter(parameter: String, value: Any?): BatchInsertOperation<T> {
+    fun parameter(parameter: String, value: Any?): BatchExecute<T> {
         builder.parameter(parameter, value)
         return this
     }
@@ -279,28 +284,61 @@ class BatchInsertOperation<T>(
 
         val cps = builder.toPreparedStatement()
 
-        zip(insertElements, Observable.rangeLong(0L, Long.MAX_VALUE))
+        cps.conn.autoCommit = false
+
+        zip(elements, Observable.rangeLong(0L, Long.MAX_VALUE))
                 .flatMap { (t, i) ->
-                    insertMapper(t)
-                    // TODO need to figure out how to move furtherOps parameter population operation
+                    cps.ps.parameterMapper(t)
+
                     cps.ps.addBatch()
                     if ((i + 1L) % batchSize.toLong() == 0L) {
-                        Observable.fromArray(cps.ps.executeBatch().toTypedArray())
+                        Observable.fromIterable(cps.ps.executeBatch().asIterable())
                     } else {
                         Observable.empty()
                     }
                 }
-                .concatWith(Observable.defer { Observable.fromArray(cps.ps.executeBatch().toTypedArray()) })
+                .concatWith(Observable.defer { Observable.fromIterable(cps.ps.executeBatch().asIterable()) })
                 .doOnComplete {
                     if (autoClose) {
                         cps.ps.close()
                         cps.conn.close()
                     }
+                    cps.conn.autoCommit = true
                 }
     }
 
+    /*fun toFlowable() = Flowable.defer {
+
+        val cps = builder.toPreparedStatement()
+
+        cps.conn.autoCommit = false
+
+        zip(elements, Flowable.rangeLong(0L, Long.MAX_VALUE))
+                .flatMap { (t, i) ->
+                    cps.ps.parameterMapper(t)
+
+                    cps.ps.addBatch()
+                    if ((i + 1L) % batchSize.toLong() == 0L) {
+                        Observable.fromIterable(cps.ps.executeBatch().asIterable())
+                    } else {
+                        Observable.empty()
+                    }
+                }
+                .concatWith(Observable.defer { Observable.fromIterable(cps.ps.executeBatch().asIterable()) })
+                .doOnComplete {
+                    if (autoClose) {
+                        cps.ps.close()
+                        cps.conn.close()
+                    }
+                    cps.conn.autoCommit = true
+                }
+    }*/
     private fun <T1, T2> zip(source1: Observable<T1>, source2: Observable<T2>) =
             Observable.zip(source1, source2,
+                    BiFunction<T1, T2, Pair<T1, T2>> { t1, t2 -> t1 to t2 })
+
+    private fun <T1, T2> zip(source1: Flowable<T1>, source2: Flowable<T2>) =
+            Flowable.zip(source1, source2,
                     BiFunction<T1, T2, Pair<T1, T2>> { t1, t2 -> t1 to t2 })
 }
 
@@ -526,9 +564,9 @@ class Pipeline<T: Any>(val selectOperation: SelectOperation? = null,
     fun blockingFirstOrNull() = selectOperation?.blockingFirstOrNull(mapper) ?: insertOperation?.blockingFirstOrNull(mapper) ?: throw Exception("Operation must be provided")
 }
 
-fun PreparedStatement.processParameters(v: Array<out Any?>) = v.forEachIndexed { i,v2 -> processParameter(i,v2)}
+fun PreparedStatement.parameters(vararg v: Any?) = v.forEachIndexed { i, v2 -> parameter(i,v2)}
 
-fun PreparedStatement.processParameter(pos: Int, argVal: Any?) {
+fun PreparedStatement.parameter(pos: Int, argVal: Any?) {
     when (argVal) {
         null -> setObject(pos + 1, null)
         is UUID -> setObject(pos + 1, argVal)

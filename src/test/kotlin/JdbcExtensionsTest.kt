@@ -463,12 +463,21 @@ class DatabaseTest {
                 Pair("heathermorgan","squirrel22")
         )
 
-        conn.batchInsert(
+        conn.batchExecute(
                 sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)",
-                insertElements = insertElements,
+                elements = insertElements,
                 batchSize = 3,
-                insertMapper = { parameters(it.first, it.second) }
+                parameterMapper = { parameters(it.first, it.second) },
+                autoClose = false
         ).toObservable()
-         .subscribe { println(it) }
+         .subscribe(::println)
+
+        val testObserver = TestObserver<Pair<String,String>>()
+
+        conn.select("SELECT * FROM USER")
+                .toObservable { it.getString(1) to it.getString(2) }
+                .subscribe(testObserver)
+
+        testObserver.assertValueCount(9)
     }
 }
