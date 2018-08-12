@@ -5,6 +5,7 @@ import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.annotations.Experimental
+import io.reactivex.functions.BiFunction
 import java.io.InputStream
 import java.math.BigDecimal
 import java.sql.Connection
@@ -41,6 +42,20 @@ fun Connection.insert(insertSQL: String)  =
             connectionGetter = { this },
             autoClose = false
         )
+
+fun <T> Connection.batchInsert(sqlTemplate: String,
+                               insertElements: Observable<T>,
+                               batchSize: Int,
+                               insertMapper: BatchInsertOperation<T>.(T) -> Unit
+) = BatchInsertOperation(
+    sqlTemplate = sqlTemplate,
+    insertElements =  insertElements,
+    batchSize = batchSize,
+    insertMapper = insertMapper,
+    connectionGetter = { this },
+    autoClose = true
+)
+
 
 fun DataSource.execute(sqlTemplate: String) = UpdateOperation(
         sqlTemplate = sqlTemplate,
@@ -227,6 +242,66 @@ class SelectOperation(
         it.close()
         result
     }
+}
+
+
+class BatchInsertOperation<T>(
+        sqlTemplate: String,
+        connectionGetter: () -> Connection,
+        val batchSize: Int,
+        val insertElements: Observable<T>,
+        val insertMapper: BatchInsertOperation<T>.(T) -> Unit,
+        val autoClose: Boolean
+) {
+    private val builder = PreparedStatementBuilder(connectionGetter, { sql, conn -> conn.prepareStatement(sql, RETURN_GENERATED_KEYS) }, sqlTemplate)
+
+    fun parameter(value: Any?): BatchInsertOperation<T> {
+        builder.parameter(value)
+        return this
+    }
+
+    fun parameters(vararg parameters: Any?): BatchInsertOperation<T> {
+        builder.parameters(parameters)
+        return this
+    }
+
+    fun parameter(parameter: Pair<String, Any?>): BatchInsertOperation<T> {
+        builder.parameter(parameter)
+        return this
+    }
+
+    fun parameter(parameter: String, value: Any?): BatchInsertOperation<T> {
+        builder.parameter(parameter, value)
+        return this
+    }
+
+    fun toObservable() = Observable.defer {
+
+        val cps = builder.toPreparedStatement()
+
+        zip(insertElements, Observable.rangeLong(0L, Long.MAX_VALUE))
+                .flatMap { (t, i) ->
+                    insertMapper(t)
+                    // TODO need to figure out how to move furtherOps parameter population operation
+                    cps.ps.addBatch()
+                    if ((i + 1L) % batchSize.toLong() == 0L) {
+                        Observable.fromArray(cps.ps.executeBatch().toTypedArray())
+                    } else {
+                        Observable.empty()
+                    }
+                }
+                .concatWith(Observable.defer { Observable.fromArray(cps.ps.executeBatch().toTypedArray()) })
+                .doOnComplete {
+                    if (autoClose) {
+                        cps.ps.close()
+                        cps.conn.close()
+                    }
+                }
+    }
+
+    private fun <T1, T2> zip(source1: Observable<T1>, source2: Observable<T2>) =
+            Observable.zip(source1, source2,
+                    BiFunction<T1, T2, Pair<T1, T2>> { t1, t2 -> t1 to t2 })
 }
 
 

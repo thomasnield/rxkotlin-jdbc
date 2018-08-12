@@ -446,4 +446,29 @@ class DatabaseTest {
         userOf(userName = "thomasnield", password = "password123").subscribe(observer2)
         observer2.assertValues(1)
     }
+
+
+    @Test
+    fun batchInsert1() {
+
+        val conn = connectionFactory()
+
+        val insertElements = Observable.just(
+                Pair("josephmarlon", "coffeesnob43"),
+                Pair("samuelfoley","shiner67"),
+                Pair("emilyearly","rabbit99"),
+                Pair("johnlawrey", "shiner23"),
+                Pair("tomstorm","coors44"),
+                Pair("danpaxy", "texas22"),
+                Pair("heathermorgan","squirrel22")
+        )
+
+        conn.batchInsert(
+                sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)",
+                insertElements = insertElements,
+                batchSize = 3,
+                insertMapper = { parameters(it.first, it.second) }
+        ).toObservable()
+         .subscribe { println(it) }
+    }
 }
