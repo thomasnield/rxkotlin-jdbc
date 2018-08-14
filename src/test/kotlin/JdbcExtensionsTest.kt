@@ -1,4 +1,5 @@
 
+import io.reactivex.Flowable
 import io.reactivex.Observable
 import io.reactivex.observers.TestObserver
 import io.reactivex.subscribers.TestSubscriber
@@ -479,5 +480,37 @@ class DatabaseTest {
                 .subscribe(testObserver)
 
         testObserver.assertValueCount(9)
+    }
+
+    @Test
+    fun batchInsert2() {
+
+        val conn = connectionFactory()
+
+        val insertElements = Flowable.just(
+                Pair("josephmarlon", "coffeesnob43"),
+                Pair("samuelfoley","shiner67"),
+                Pair("emilyearly","rabbit99"),
+                Pair("johnlawrey", "shiner23"),
+                Pair("tomstorm","coors44"),
+                Pair("danpaxy", "texas22"),
+                Pair("heathermorgan","squirrel22")
+        )
+
+        conn.batchExecute(
+                sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)",
+                elements = insertElements,
+                batchSize = 3,
+                parameterMapper = { parameters(it.first, it.second) }
+        ).toObservable()
+         .subscribe(::println)
+
+        val testSubscriber = TestSubscriber<Pair<String,String>>()
+
+        conn.select("SELECT * FROM USER")
+                .toFlowable { it.getString(1) to it.getString(2) }
+                .subscribe(testSubscriber)
+
+        testSubscriber.assertValueCount(9)
     }
 }

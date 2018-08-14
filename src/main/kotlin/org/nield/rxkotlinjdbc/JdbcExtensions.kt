@@ -54,12 +54,139 @@ fun <T> Connection.batchExecute(sqlTemplate: String,
                                 autoClose: Boolean = false
 ) = BatchExecute(
     sqlTemplate = sqlTemplate,
-    elements =  elements,
+    elementsObservable =  elements,
     batchSize = batchSize,
     parameterMapper = parameterMapper,
     connectionGetter = { this },
     autoClose = autoClose
 )
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> Connection.batchExecute(sqlTemplate: String,
+                                elements: Flowable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = false
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsFlowable =  elements,
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this },
+        autoClose = autoClose
+)
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> Connection.batchExecute(sqlTemplate: String,
+                                elements: Iterable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = false
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsIterable =  elements,
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this },
+        autoClose = autoClose
+)
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> Connection.batchExecute(sqlTemplate: String,
+                                elements: Sequence<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = false
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsIterable =  elements.asIterable(),
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this },
+        autoClose = autoClose
+)
+
+
+
+
+
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> DataSource.batchExecute(sqlTemplate: String,
+                                elements: Observable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = true
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsObservable =  elements,
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this.connection },
+        autoClose = autoClose
+)
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> DataSource.batchExecute(sqlTemplate: String,
+                                elements: Flowable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = true
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsFlowable =  elements,
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this.connection },
+        autoClose = autoClose
+)
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> DataSource.batchExecute(sqlTemplate: String,
+                                elements: Iterable<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = true
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsIterable =  elements,
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this.connection },
+        autoClose = autoClose
+)
+
+/**
+ * Executes a batched INSERT operation and returns the generated keys as a single-field `ResultSet`
+ */
+fun <T> DataSource.batchExecute(sqlTemplate: String,
+                                elements: Sequence<T>,
+                                batchSize: Int,
+                                parameterMapper: PreparedStatement.(T) -> Unit,
+                                autoClose: Boolean = true
+) = BatchExecute(
+        sqlTemplate = sqlTemplate,
+        elementsIterable =  elements.asIterable(),
+        batchSize = batchSize,
+        parameterMapper = parameterMapper,
+        connectionGetter = { this.connection },
+        autoClose = autoClose
+)
+
+
+
 
 
 fun DataSource.execute(sqlTemplate: String) = UpdateOperation(
@@ -254,7 +381,9 @@ class BatchExecute<T>(
         sqlTemplate: String,
         connectionGetter: () -> Connection,
         val batchSize: Int,
-        val elements: Observable<T>,
+        val elementsObservable: Observable<T>? = null,
+        val elementsFlowable: Flowable<T>? = null,
+        val elementsIterable: Iterable<T>? = null,
         val parameterMapper: PreparedStatement.(T) -> Unit,
         val autoClose: Boolean
 ) {
@@ -286,18 +415,55 @@ class BatchExecute<T>(
 
         cps.conn.autoCommit = false
 
-        zip(elements, Observable.rangeLong(0L, Long.MAX_VALUE))
-                .flatMap { (t, i) ->
+        zip(elementsObservable
+                ?:elementsFlowable?.toObservable()
+                ?:elementsIterable?.let { Observable.fromIterable(it) }
+                ?: throw Exception("No elements were provided"),
+
+                Observable.rangeLong(0L, Long.MAX_VALUE)
+        )
+        .flatMap { (t, i) ->
+            cps.ps.parameterMapper(t)
+
+            cps.ps.addBatch()
+            if ((i + 1L) % batchSize.toLong() == 0L) {
+                Observable.fromIterable(cps.ps.executeBatch().asIterable())
+            } else {
+                Observable.empty()
+            }
+        }
+        .concatWith(Observable.defer { Observable.fromIterable(cps.ps.executeBatch().asIterable()) })
+        .doOnComplete {
+            if (autoClose) {
+                cps.ps.close()
+                cps.conn.close()
+            }
+            cps.conn.autoCommit = true
+        }
+    }
+
+    fun toFlowable() = Flowable.defer {
+
+        val cps = builder.toPreparedStatement()
+
+        cps.conn.autoCommit = false
+
+        zip(elementsFlowable?:
+            elementsIterable?.let { Flowable.fromIterable(it) }
+            ?: throw Exception("No elements provided"),
+
+            Flowable.rangeLong(0L, Long.MAX_VALUE)
+        ).flatMap { (t, i) ->
                     cps.ps.parameterMapper(t)
 
                     cps.ps.addBatch()
                     if ((i + 1L) % batchSize.toLong() == 0L) {
-                        Observable.fromIterable(cps.ps.executeBatch().asIterable())
+                        Flowable.fromIterable(cps.ps.executeBatch().asIterable())
                     } else {
-                        Observable.empty()
+                        Flowable.empty()
                     }
                 }
-                .concatWith(Observable.defer { Observable.fromIterable(cps.ps.executeBatch().asIterable()) })
+                .concatWith(Flowable.defer { Flowable.fromIterable(cps.ps.executeBatch().asIterable()) })
                 .doOnComplete {
                     if (autoClose) {
                         cps.ps.close()
@@ -307,32 +473,33 @@ class BatchExecute<T>(
                 }
     }
 
-    /*fun toFlowable() = Flowable.defer {
-
+/*    fun toSequence() {
         val cps = builder.toPreparedStatement()
 
         cps.conn.autoCommit = false
 
-        zip(elements, Flowable.rangeLong(0L, Long.MAX_VALUE))
-                .flatMap { (t, i) ->
-                    cps.ps.parameterMapper(t)
+        (elementsIterable?:throw Exception("No elements were provided") )
+         .asSequence()
+         .withIndex()
+        .flatMap { (i,t) ->
+            cps.ps.parameterMapper(t)
 
-                    cps.ps.addBatch()
-                    if ((i + 1L) % batchSize.toLong() == 0L) {
-                        Observable.fromIterable(cps.ps.executeBatch().asIterable())
-                    } else {
-                        Observable.empty()
-                    }
-                }
-                .concatWith(Observable.defer { Observable.fromIterable(cps.ps.executeBatch().asIterable()) })
-                .doOnComplete {
-                    if (autoClose) {
-                        cps.ps.close()
-                        cps.conn.close()
-                    }
-                    cps.conn.autoCommit = true
-                }
+            cps.ps.addBatch()
+            if ((i + 1L) % batchSize.toLong() == 0L) {
+                cps.ps.executeBatch().asSequence()
+            } else {
+                emptySequence()
+            }
+        }
+        .plus( generatecps.ps.executeBatch().asIterable()) })
+
+        if (autoClose) {
+            cps.ps.close()
+            cps.conn.close()
+        }
+        cps.conn.autoCommit = true
     }*/
+
     private fun <T1, T2> zip(source1: Observable<T1>, source2: Observable<T2>) =
             Observable.zip(source1, source2,
                     BiFunction<T1, T2, Pair<T1, T2>> { t1, t2 -> t1 to t2 })
@@ -494,7 +661,7 @@ class  ResultSetSequence<out T>(private val queryIterator: QueryIterator<T>): Se
     val isClosed get() = queryIterator.rs.isClosed
 }
 
-class QueryIterator<out T>(val qs: ResultSetState,
+class QueryIterator<out T>(val qs: ResultSetState? = null,
                            val rs: ResultSet,
                            val mapper: (ResultSet) -> T,
                            val autoClose: Boolean
@@ -534,9 +701,9 @@ class QueryIterator<out T>(val qs: ResultSetState,
 
     override fun close() {
         rs.close()
-        qs.statement?.close()
+        qs?.statement?.close()
         if (autoClose)
-            qs.connection?.close()
+            qs?.connection?.close()
     }
     fun cancel() {
         cancelled.set(true)
@@ -544,9 +711,9 @@ class QueryIterator<out T>(val qs: ResultSetState,
 
     private fun excecuteCancel() {
         rs.close()
-        qs.statement?.close()
+        qs?.statement?.close()
         if (autoClose)
-            qs.connection?.close()
+            qs?.connection?.close()
     }
 }
 
