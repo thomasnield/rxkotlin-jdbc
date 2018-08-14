@@ -204,7 +204,7 @@ conn.batchExecute(
             parameter("username", it.username)
             parameter("password", it.password)
         }
-).toSequence().count()
+).toFlowable().count().subscribeBy { println("Inserted $it records") }
 ```
 
 ## Building Where Conditions Fluently
