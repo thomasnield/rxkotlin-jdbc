@@ -121,7 +121,7 @@ class BatchExecute<T>(
 
         cps.conn.autoCommit = false
 
-        return (elementsIterable?:throw Exception("No elements were provided") )
+        return (elementsIterable?:throw Exception("An Iterable or Sequence must be provided as input to use toSequence()") )
          .asSequence()
          .withIndex()
         .flatMap { (i,t) ->

@@ -171,6 +171,41 @@ fun main(args: Array<String>) {
     getUsers().toSequence().forEach { println("Receiving $it via Sequence") }
 }
 ```
+## Batching
+
+[Batch operations](http://tutorials.jenkov.com/jdbc/batchupdate.html) are now supported in RxKotlin-JDBC. This allows you to write a large amount of data to a database quickly using JDBC's batching interface.
+
+Simply have an `Observable<T>`, `Flowable<T>`, `Iterable<T>`, or `Sequence<T>` of desired elements to INSERT, UPDATE, or some other action against your database, and pass it to the `batchExecute()` function on `Connection` or `DataSource`.
+
+You will also need to specify the SQL template, the mapper to turn each `T` element into SQL parameters, and the batch size.
+
+You can have the result come back as an `Observable<T>`, `Flowable<T>`, `Sequence<T>`, or a `Compeletable`.
+
+```kotlin
+val conn = connectionFactory()
+
+class User(val username: String, val password: String)
+
+val insertElements = Flowable.just(
+        User("josephmarlon", "coffeesnob43"),
+        User("samuelfoley","shiner67"),
+        User("emilyearly","rabbit99"),
+        User("johnlawrey", "shiner23"),
+        User("tomstorm","coors44"),
+        User("danpaxy", "texas22"),
+        User("heathermorgan","squirrel22")
+)
+
+conn.batchExecute(
+        sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)",
+        elements = insertElements,
+        batchSize = 3,
+        parameterMapper = {
+            parameter("username", it.username)
+            parameter("password", it.password)
+        }
+).toSequence().count()
+```
 
 ## Building Where Conditions Fluently
 

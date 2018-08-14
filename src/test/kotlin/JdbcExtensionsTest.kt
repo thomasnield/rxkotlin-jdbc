@@ -487,14 +487,16 @@ class DatabaseTest {
 
         val conn = connectionFactory()
 
+        class User(val username: String, val password: String)
+
         val insertElements = Flowable.just(
-                Pair("josephmarlon", "coffeesnob43"),
-                Pair("samuelfoley","shiner67"),
-                Pair("emilyearly","rabbit99"),
-                Pair("johnlawrey", "shiner23"),
-                Pair("tomstorm","coors44"),
-                Pair("danpaxy", "texas22"),
-                Pair("heathermorgan","squirrel22")
+                User("josephmarlon", "coffeesnob43"),
+                User("samuelfoley","shiner67"),
+                User("emilyearly","rabbit99"),
+                User("johnlawrey", "shiner23"),
+                User("tomstorm","coors44"),
+                User("danpaxy", "texas22"),
+                User("heathermorgan","squirrel22")
         )
 
         conn.batchExecute(
@@ -502,8 +504,8 @@ class DatabaseTest {
                 elements = insertElements,
                 batchSize = 3,
                 parameterMapper = {
-                    parameter("username", it.first)
-                    parameter("password", it.second)
+                    parameter("username", it.username)
+                    parameter("password", it.password)
                 }
         ).toFlowable()
          .subscribe()
@@ -522,14 +524,16 @@ class DatabaseTest {
 
         val conn = connectionFactory()
 
-        val insertElements = listOf(
-                Pair("josephmarlon", "coffeesnob43"),
-                Pair("samuelfoley","shiner67"),
-                Pair("emilyearly","rabbit99"),
-                Pair("johnlawrey", "shiner23"),
-                Pair("tomstorm","coors44"),
-                Pair("danpaxy", "texas22"),
-                Pair("heathermorgan","squirrel22")
+        class User(val username: String, val password: String)
+
+        val insertElements = Flowable.just(
+                User("josephmarlon", "coffeesnob43"),
+                User("samuelfoley","shiner67"),
+                User("emilyearly","rabbit99"),
+                User("johnlawrey", "shiner23"),
+                User("tomstorm","coors44"),
+                User("danpaxy", "texas22"),
+                User("heathermorgan","squirrel22")
         )
 
         conn.batchExecute(
@@ -537,8 +541,8 @@ class DatabaseTest {
                 elements = insertElements,
                 batchSize = 3,
                 parameterMapper = {
-                    parameter("username", it.first)
-                    parameter("password", it.second)
+                    parameter("username", it.username)
+                    parameter("password", it.password)
                 }
         ).toSequence().count()
 
