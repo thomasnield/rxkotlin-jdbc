@@ -526,7 +526,7 @@ class DatabaseTest {
 
         class User(val username: String, val password: String)
 
-        val insertElements = Flowable.just(
+        val insertElements = listOf(
                 User("josephmarlon", "coffeesnob43"),
                 User("samuelfoley","shiner67"),
                 User("emilyearly","rabbit99"),
