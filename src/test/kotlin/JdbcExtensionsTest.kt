@@ -450,7 +450,7 @@ class DatabaseTest {
 
 
     @Test
-    fun batchInsert1() {
+    fun batchInsertObservable() {
 
         val conn = connectionFactory()
 
@@ -471,7 +471,7 @@ class DatabaseTest {
                 parameterMapper = { parameters(it.first, it.second) },
                 autoClose = false
         ).toObservable()
-         .subscribe(::println)
+         .subscribe()
 
         val testObserver = TestObserver<Pair<String,String>>()
 
@@ -483,7 +483,7 @@ class DatabaseTest {
     }
 
     @Test
-    fun batchInsert2() {
+    fun batchInsertFlowable() {
 
         val conn = connectionFactory()
 
@@ -498,12 +498,15 @@ class DatabaseTest {
         )
 
         conn.batchExecute(
-                sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (?,?)",
+                sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)",
                 elements = insertElements,
                 batchSize = 3,
-                parameterMapper = { parameters(it.first, it.second) }
-        ).toObservable()
-         .subscribe(::println)
+                parameterMapper = {
+                    parameter("username", it.first)
+                    parameter("password", it.second)
+                }
+        ).toFlowable()
+         .subscribe()
 
         val testSubscriber = TestSubscriber<Pair<String,String>>()
 
@@ -512,5 +515,36 @@ class DatabaseTest {
                 .subscribe(testSubscriber)
 
         testSubscriber.assertValueCount(9)
+    }
+
+    @Test
+    fun batchInsertSequence() {
+
+        val conn = connectionFactory()
+
+        val insertElements = listOf(
+                Pair("josephmarlon", "coffeesnob43"),
+                Pair("samuelfoley","shiner67"),
+                Pair("emilyearly","rabbit99"),
+                Pair("johnlawrey", "shiner23"),
+                Pair("tomstorm","coors44"),
+                Pair("danpaxy", "texas22"),
+                Pair("heathermorgan","squirrel22")
+        )
+
+        conn.batchExecute(
+                sqlTemplate = "INSERT INTO USER (USERNAME, PASSWORD) VALUES (:username,:password)",
+                elements = insertElements,
+                batchSize = 3,
+                parameterMapper = {
+                    parameter("username", it.first)
+                    parameter("password", it.second)
+                }
+        ).toSequence().count()
+
+        conn.select("SELECT * FROM USER")
+                .toSequence { it.getString(1) to it.getString(2) }
+                .toList()
+                .also { Assert.assertTrue(it.count() == 9) }
     }
 }
