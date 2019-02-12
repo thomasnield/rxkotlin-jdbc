@@ -35,10 +35,20 @@ class UpdateOperation(
     }
 
     fun toSingle() = Single.defer {
-        Single.just(builder.toPreparedStatement().ps.executeUpdate())
+        val cps = builder.toPreparedStatement()
+        ResultSetState({
+            cps.ps.executeUpdate()
+            cps.ps.generatedKeys
+        }, cps.ps, cps.conn, autoClose).toObservable { it }.count()
     }
 
-    fun toCompletable() = toSingle().toCompletable()
+    fun toCompletable() = toSingle().ignoreElement()
 
-    fun blockingGet() = builder.toPreparedStatement().ps.executeUpdate()
+    fun blockingGet(): Unit {
+        val cps = builder.toPreparedStatement()
+        ResultSetState({
+            cps.ps.executeUpdate()
+            cps.ps.generatedKeys
+        }, cps.ps, cps.conn, autoClose).toSequence { 0 }.first()
+    }
 }

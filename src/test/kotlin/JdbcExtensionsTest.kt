@@ -297,7 +297,7 @@ class DatabaseTest {
 
         val conn = connectionFactory()
 
-        val testObserver = TestObserver<Int>()
+        val testObserver = TestObserver<Long>()
 
         conn.execute("DELETE FROM USER WHERE ID = :id")
                 .parameter("id",2)
@@ -311,7 +311,7 @@ class DatabaseTest {
     fun updateTest() {
 
         val conn = connectionFactory()
-        val testObserver = TestObserver<Int>()
+        val testObserver = TestObserver<Long>()
 
         conn.execute("UPDATE USER SET PASSWORD = :password WHERE ID = :id")
                 .parameter("id",1)
@@ -327,7 +327,7 @@ class DatabaseTest {
     fun updateTest2() {
 
         val conn = connectionFactory()
-        val testObserver = TestObserver<Int>()
+        val testObserver = TestObserver<Long>()
 
         conn.execute("UPDATE USER SET PASSWORD = ? WHERE ID = ?")
                 .parameters("squirrel56", 1)
